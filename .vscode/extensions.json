@@ -1,0 +1,28 @@
+{
+    "recommendations": [
+        "leonardssh.vscord",
+        "njpwerner.autodocstring",
+        "batisteo.vscode-django",
+        "waderyan.gitblame",
+        "donjayamanne.githistory",
+        "arturock.gitstash",
+        "knisterpeter.vscode-github",
+        "github.vscode-pull-request-github",
+        "codezombiech.gitignore",
+        "eamodio.gitlens",
+        "wholroyd.jinja",
+        "ms-toolsai.jupyter",
+        "ms-toolsai.jupyter-keymap",
+        "ms-toolsai.jupyter-renderers",
+        "jeylanib.pine-editor-themes",
+        "jeylanib.pinescript",
+        "ms-python.vscode-pylance",
+        "ms-python.python",
+        "donjayamanne.python-environment-manager",
+        "donjayamanne.python-extension-pack",
+        "kevinrose.vsc-python-indent",
+        "visualstudioexptteam.vscodeintellicode",
+        "dsebastien.vscode-git-pack",
+        "andyyaldoo.vscode-json"
+    ]
+}
