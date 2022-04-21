@@ -1,0 +1,37 @@
+[In reply to Anton_fmrly_fomobro]
+[ Photo ]
+Example using dynamic variable alerts message from within an indicator() alertcondition:
+
+//@version=5
+indicator(title = "Study Alert Plot Example")
+plot(close, title = 'priceClose')
+alertcondition(close, title ="~Alert Close", message = 'Closing Price of {{ticker}} is: ${{plot("priceClose")}}')
+
+—
+NOTICE: For strategy() type scripts, use placeholder below in the alert creation Message field:
+
+{{strategy.order.alert_message}}
+
+^ This placeholder will then call the messages from your strategy.x() statements: 
+
+strategy.x(alert_message="blah {{placeholder_A}}")
+
+—
+Alerts Dynamic Variable
+PineCoders FAQ & Code:
+ •  How do I make an alert available from my script?
+
+ (https://www.pinecoders.com/faq_and_code/#alerts)TradingView Help:
+ •  How to use a variable value in Alert?
+ (https://www.tradingview.com/support/solutions/43000531021-how-to-use-a-variable-value-in-alert/) •  Strategy Alerts
+ (https://www.tradingview.com/support/solutions/43000481368/)TradingView Blog: 
+ •  Our New Alerts Allow for Dynamic Messages
+ (https://www.tradingview.com/blog/en/our-new-alerts-allow-for-dynamic-messages-22588/) •  Strategy Alerts Are Live Now
+ (https://www.tradingview.com/blog/en/strategy-alerts-are-live-now-18770/) •  Introducing Variables in Alerts
+ (https://www.tradingview.com/blog/en/introducing-variables-in-alerts-14880/)User Manual:  Alerts
+ (https://www.tradingview.com/pine-script-docs/en/v5/concepts/Alerts.html)Language Reference:  alert
+
+ (https://www.tradingview.com/pine-script-reference/v5/#fun_alert)Kodify:
+ •  How To Use Variables with TradingView alerts
+
+ (https://kodify.net/tradingview/alerts/alert-variables/)#howto #alert #alerts
