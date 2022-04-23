@@ -1,27 +1,14 @@
 {
 	"folders": [
 		{
-			"path": "..\\renko-strat"
-		},
-		{
 			"path": "."
 		}
 	],
 	"settings": {
-		"rpc.appName": "Visual Studio Code",
-		"rpc.buttonEnabled": true,
-		"rpc.enabled": true,
-		"rpc.id": "960816254761992213",
-		"rpc.checkIdle": true,
 		"files.autoSave": "onFocusChange"
 	},
 	"extensions": {
 		"recommendations": [
-			"arturock.gitstash",
-			"knisterpeter.vscode-github",
-			"github.vscode-pull-request-github",
-			"codezombiech.gitignore",
-			"eamodio.gitlens",
 			"wholroyd.jinja",
 			"ms-toolsai.jupyter",
 			"ms-toolsai.jupyter-keymap",
