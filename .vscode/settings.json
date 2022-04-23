@@ -1,5 +1,6 @@
 {
     "rpc.appName": "Visual Studio Code",
     "rpc.buttonEnabled": true,
-    "explorer.experimental.fileNesting.enabled": false
+    "explorer.experimental.fileNesting.enabled": false,
+    "git.enableCommitSigning": true
 }
