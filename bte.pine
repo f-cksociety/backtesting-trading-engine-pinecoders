@@ -32,7 +32,7 @@
 //      After that we update numbers and begin plotting the trade's status.
 //  3. In-Trade management (Module 6)
 //      During a trade we are watching for events (Module 13) and, if required, trigger alerts on them.
-//      We also watch the progress of the trade, continually updating stop and take profit exit conditions,
+     f We also watch the progress of the trade, continually updating stop and take profit exit conditions,
 //      shifting between different exit strats if required, as price progresses, and updating info like 
 //      the P&L in order to display a putative value at each bar. We are also checking numbers for max drawdown data.
 //  4. Exit trigger (Module 10)
