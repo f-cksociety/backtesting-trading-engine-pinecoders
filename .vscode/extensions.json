@@ -12,8 +12,6 @@
         "eamodio.gitlens",
         "wholroyd.jinja",
         "ms-toolsai.jupyter",
-        "ms-toolsai.jupyter-keymap",
-        "ms-toolsai.jupyter-renderers",
         "jeylanib.pine-editor-themes",
         "jeylanib.pinescript",
         "ms-python.vscode-pylance",
@@ -23,6 +21,8 @@
         "kevinrose.vsc-python-indent",
         "visualstudioexptteam.vscodeintellicode",
         "dsebastien.vscode-git-pack",
-        "andyyaldoo.vscode-json"
+        "andyyaldoo.vscode-json",
+        "mhutchie.git-graph",
+        "CodeStream.codestream"
     ]
 }

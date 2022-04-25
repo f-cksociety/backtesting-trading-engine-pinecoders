@@ -891,6 +891,13 @@ InTrade := InLong or InShort
 FirstEntry1stBar = EntryTrigger[1] and not PyramidEntry[1]
 PyramidEntry1stBar = EntryTrigger[1] and PyramidEntry[1]
 
+//ta.change variable correction https://github.com/f-cksociety/backtesting-trading-engine-pinecoders/issues/5
+MaxReached_TA = ta.change(MaxReached)
+EquityMax_TA = ta.change(EquityMax)
+CToC_TA = ta.change(CToCEquityMax)
+PEAMaxOppReached_TA = ta.change(PEAMaxOppReached)
+PEAMaxRiskReached_TA = ta.change(PEAMaxRiskReached)
+
 // ———————————————————— A. Process 1st entries.
 // ————— If a trade's first entry (as opposed to pyramiding entries) must be entered, process it.
 // While this code appears earlier in the script than the entry trigger detection that comes in module 10,
@@ -1015,7 +1022,7 @@ else
         
         // ————— Update in-trade max drawdown info (has nothing to do with max drawdown calcs later in this section).
         // Since we only use the Min point to calculate in-trade max drawdown, reset it when a new max is found.
-        MinReached := ta.change(MaxReached)? MaxReached : InLong ? math.min(nz(MinReached[1], Rlow), Rlow) : InShort ? math.max(nz(MinReached[1], Rhigh), Rhigh) : na
+        MinReached := MaxReached_TA ? MaxReached : InLong ? math.min(nz(MinReached[1], Rlow), Rlow) : InShort ? math.max(nz(MinReached[1], Rhigh), Rhigh) : na
         // Record current drawdown to build history of all drawdowns during trade.
         TradeDrawdown := math.min(0.0,(MaxReached-MinReached)*(InLong[1]?-1:1)/MaxReached)
         // Find largest drawdown during trade.
@@ -1461,7 +1468,7 @@ if ExitTrigger[1]
     // Max and min close to close equity reached, and end of trade drawdown reached.
     CToCEquityMax := math.max(Equity, nz(CToCEquityMax[1],Equity))
     // Reset min when new high encountered.
-    CToCEquityMin := ta.change(CToCEquityMax)? CToCEquityMax : math.min(Equity, nz(CToCEquityMin[1],Equity))
+    CToCEquityMin := CToC_TA ? CToCEquityMax : math.min(Equity, nz(CToCEquityMin[1],Equity))
     CToCDrawdown := (CToCEquityMin-CToCEquityMax)/CToCEquityMax
     // Max close to close drawdown in equity.
     CToCMaxDrawdown := math.min(CToCDrawdown, nz(CToCMaxDrawdown[1]))
@@ -1470,7 +1477,7 @@ if ExitTrigger[1]
 // ————— Max drawdown (using InTradeEquity measured at every bar but only changes during in-trade bars).
 EquityMax := math.max(InTradeEquity, nz(EquityMax[1]))
 // Reset min when new high encountered.
-EquityMin := ta.change(EquityMax)? EquityMax : math.min(InTradeEquity, nz(EquityMin[1]))
+EquityMin := EquityMax_TA ? EquityMax : math.min(InTradeEquity, nz(EquityMin[1]))
 Drawdown := (EquityMin-EquityMax)/EquityMax
 // Max drawdown in equity.
 MaxDrawdown := math.min(Drawdown, nz(MaxDrawdown[1]))
@@ -1523,9 +1530,9 @@ if PEAOn
                 PEABar := PEABar+1
                 PEAMaxOppReached := PEAInLong? math.max(PEAMaxOppReached, Rclose) : math.min(PEAMaxOppReached, Rclose)
                 PEAMaxRiskReached := PEAInLong? math.min(PEAMaxRiskReached, Rclose) : math.max(PEAMaxRiskReached, Rclose)
-                PEABarToMaxOpp := ta.change(PEAMaxOppReached)? PEABar : PEABarToMaxOpp
-                PEABarToMaxRisk := ta.change(PEAMaxRiskReached)? PEABar : PEABarToMaxRisk
-                PEAMaxDrawdown := ta.change(PEAMaxOppReached)? PEAMaxRiskReached : PEAMaxDrawdown
+                PEABarToMaxOpp := PEAMaxOppReached_TA ? PEABar : PEABarToMaxOpp
+                PEABarToMaxRisk := PEAMaxRiskReached ? PEABar : PEABarToMaxRisk
+                PEAMaxDrawdown := PEAMaxOppReached_TA ? PEAMaxRiskReached : PEAMaxDrawdown
 
 
 
