@@ -1789,7 +1789,7 @@ plot(ShowEntryStopAll or (ShowEntryStopEntry and ShortEntryTrigger[1] and FirstE
 // ————— In-trade stop
 plot(ShowInTradeStop and InTrade? InTradeStop:na, "In-trade stop", color=MyOrangeMedium, style=plot.style_circles, linewidth=2)
 // ————— Take-profit
-plot(ShowTakeProfit and InTrade? TakeProfitLevel:na, "Take-Profit Level", color=MyFuchsiaMedium, style=plot.style_circles, linewidth=2)
+//plot(ShowTakeProfit and InTrade? TakeProfitLevel:na, "Take-Profit Level", color=MyFuchsiaMedium, style=plot.style_circles, linewidth=2)
 // ————— Filter state
 plotshape(ShowFilter? FilterLongOK:na,  "Bull Filter OK", style=shape.triangleup, color=MyGreenMedium, location=location.top, size=size.tiny)
 plotshape(ShowFilter? FilterShortOK:na, "Bear Filter OK", style=shape.triangledown, color=MyRedMedium, location=location.top, size=size.tiny)
@@ -1832,7 +1832,7 @@ plotchar(ShowMarkers and EntryToPrintShort and EntryIsBShort[1]? EntryPrintLevel
 plotchar(ShowMarkers and LongExitTrigger[1]? ExitFill:na, "Exit Long", "╗", color=MyGreenMedium, location=location.absolute, size=MarkerSize, text=TradeId+"\nExit\nLong\n▼")
 plotchar(ShowMarkers and ShortExitTrigger[1]? ExitFill:na, "Exit Short", "╝", color=MyRedMedium, location=location.absolute, size=MarkerSize, text=TradeId+"\nExit\nShort\n▲")
 // ————— Color Traded Background
-// bgcolor(ShowTradedBackground? InLong? MyGreenBackGround : InShort? MyRedBackGround : na : na, title="Traded Background")
+bgcolor(ShowTradedBackground? InLong? MyGreenBackGround : InShort? MyRedBackGround : na : na, title="Traded Background")
 
 
 

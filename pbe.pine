@@ -1,0 +1,1828 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © pAulseperformance
+
+// 1142: Updated to version 5
+// 1143: Set to overlay true
+// 1145: Fixed Fees bug. Fixed Entry A and B reversal switch.
+// 1158: Added labels for entry/exits.
+
+// Portfolio
+
+// Net Profit (NP) - Shows profitability.
+
+// Number of Trades (#T) - Shows # of trades taken during backtesting period
+
+// Average Trade Length (ATL) - Shows avg # of days in a trade
+
+// Maximum Drawdown (MD) - Max peak-to-valley equity drawdown during backtesting period. This number defines the minimum amount of capital required to trade the system. Typically, this shouldn’t be lower than 34% and we will want to allow for at least 50% beyond this number.
+
+// Maximum Loss (ML) - Shows largest loss experienced on a per-trade basis. Normally, don’t want to exceed more than 1-2 % of equity. 
+
+// Maximum Drawdown Duration (MDD) - The longest duration of a drawdown in equity prior to a new equity peak. This number is important to help us psychologically understand how long we can expect to wait for a new peak in account equity. 
+
+// Maximum Consecutive Losses (MCL) - The max consecutive losses endured throughout the backtesting period. Another important metric for trader psychology, this will help you understand how many losses you should be prepared to handle.
+
+// Profit to Maximum Drawdown (P:MD) - A ratio for the average profit to the maximum drawdown. The higher the ratio is, the better. Large profits and small losses contribute to a good PMD.  This metric allows us to examine the profit with respect to risk.
+
+// Profit Loss Ratio (P:L) - Average profit over the average loss. Typically this number should be higher in trend following systems. Mean reversion systems show lower values, but compensate with a better win %.
+
+// Percent Winners (% W) - The percentage of winning trades. Trend systems will usually have lower win percentages, since statistically the market is only trending roughly 30% of the time. Mean reversion systems typically should have a high % W.
+
+// Time Percentage (Time %) - The amount of time that the system has an open position. The more time you are in the market, the more you are exposed to the market's risk, not to mention you could be using that money for something else right? 
+
+// Return on Investment (ROI) - Your Net Profit over your initial investment, represented as a percentage. You want this number to be positive and high.
+
+// Open Profit (OP) - If the strategy has any open positions, the floating value will be represented here.
+
+// Trading Days (TD) - An important metric showing how many days the strategy was active. This is good to know and will be valuable in understanding how long you will need to run this strategy in order to achieve results.
+
+
+//@version=5
+indicator('Portfolio Backtester', overlay=true, precision=6, max_lines_count=500, max_labels_count=500)
+
+
+
+
+// ——————————————— Inputs and states
+// ————— A. Option list constants.
+// Trade Direction
+TD1 = 'Both'
+TD2 = 'Longs Only'
+TD3 = 'Shorts Only'
+// Strategies
+EN0 = '0. None'
+EN1 = '1. Entry Strategy A'
+EN2 = '2. Entry Strategy B'
+
+// Entry Stops
+ES0 = '0. None'
+ES2 = '2. ATR multiple'
+ES3 = '3. Fixed %'
+ES4 = '4. Fixed Value'
+
+// In Trade Stops
+IS0 = '0. None'
+IS1 = '1. Trailing at X multiple'
+IS2 = '2. Trailing at %'
+IS3 = '3. Trailing at Fixed Value'
+IS4 = '4. Move To Break Even'
+IS5 = '5. ATR multiple'
+IS8 = '8. Last Lo/Hi'
+// In Trade Stop Kick In
+IK1 = '1. Stop >= Entry Stop'
+IK2 = '2. Stop >= Entry +/- X multiple'
+IK3 = '3. Stop >= Entry +/- %'
+IK4 = '4. Stop >= Entry +/- Fixed Value'
+IK5 = '5. Price >= Entry +/- %'
+// Pyramiding
+PY1 = 'Off'
+PY3 = 'On'
+PT1 = '1. Every X Multiple'
+PT2 = '2. Every % Increment'
+PT3 = '3. Every Price Increment'
+PT4 = '4. On same entry'
+PT5 = '5. On different entry'
+PT6 = '6. At every opportunity'
+// Slippage
+SL1 = '1. None'
+SL2 = '2. Percentage'
+SL3 = '3. Fixed Value'
+// Fees
+FE1 = '1. None'
+FE2 = '2. Percentage'
+FE3 = '3. Fixed Value'
+// Position Sizing
+PS1 = '1. Proportional to Stop -> Variable'
+PS2 = '2. % of Equity -> Variable'
+PS3 = '3. % of Capital -> Fixed'
+
+
+// ————— C. Entries
+TradeDirection      = input.string(TD1, 'Trade Direction', options=[TD1, TD2, TD3], group='Entries')
+GenerateLongs       = TradeDirection != TD3
+GenerateShorts      = TradeDirection != TD2
+EntryA              = input.string(EN1, 'Entry Strategy A', options=[EN0, EN1, EN2], group='Entries', inline='EA')
+EntryAReverse       = input.bool(false, 'Reverse Signals', tooltip='Long Signals will be interpreted as Short Signals and vise versa', inline='EA', group='Entries')
+EntryB              = input.string(EN0, 'Entry Strategy B', options=[EN0, EN1, EN2], group='Entries', inline='EB')
+EntryBReverse       = input.bool(false, 'Reverse Signals', tooltip='Long Signals will be interpreted as Short Signals and vise versa', inline='EB', group='Entries')
+
+
+// Split the random entries in 2 so we can generate from 2 different seeds.
+EntryType1 = EntryA == EN1 or EntryB == EN1
+EntryType2 = EntryA == EN2 or EntryB == EN2
+
+
+// ————— E. Entry stops
+EntryStopType       = input.string(ES0, 'Entry Stop Selection', options=[ES0, ES2, ES3], group='Entry Stops')
+EntryStopType0      = EntryStopType == ES0
+EntryStopType2      = EntryStopType == ES2
+EntryStopType3      = EntryStopType == ES3
+EntryStopType2Mult  = input.float(1.5, '  2. ATR', minval=0.05, step=0.1, group='Entry Stops', inline='ES2')
+EntryStopType2Len   = input.int(14, '', minval=2, group='Entry Stops', inline='ES2', tooltip='ATR Multiple, ATR Length')
+EntryStopType3Pct   = input.float(3.0, '  3. Fixed %', minval=0.0001, step=0.1, group='Entry Stops')
+
+
+// ————— D. Filters
+FilterType1         = input.bool(false, '1. Random', group='Filters')
+FilterType2         = input.bool(false, '2. MACD', inline='FT2', group='Filters', tooltip='Long Filter: MACD > 0\nShort Filter: MACD < 0')
+FilterType2Len1     = input.int(12, '', inline='FT2', group='Filters')
+FilterType2Len2     = input.int(26, '', inline='FT2', group='Filters')
+FilterType2Len3     = input.int(9, '', inline='FT2', group='Filters', tooltip='Fast Length, Slow Length, Signal Line')
+FilterType3         = input.bool(false, '3. Bar direction=Trade direction', group='Filters', tooltip='Long filter: close>open\nShort Filter: close<open')
+FilterType4         = input.bool(false, '4. Rising Volume', group='Filters', tooltip='Long Filter: Volume Increasing\nShort Filter: Volume Decreasing')
+FilterType5         = input.bool(false, '5. Rising/Falling MA ↴           ', group='Filters', tooltip='Long Filter: SMA is Rising\nShort Filter: SMA Falling')
+FilterType5Len      = input.int(50, '  ↳ Length', minval=2, group='Filters')
+FilterType5Bars     = input.int(1, '  ↳ For n Bars', minval=1, group='Filters')
+FilterType6         = input.bool(false, '6. Maximum % Stop allowed on entry', group='Filters', inline='Filter Max % Stop')
+FilterType6MaxRisk  = input.float(6.0, '  ', minval=0.0, step=0.5, group='Filters', inline='Filter Max % Stop')
+FilterType7         = input.bool(false, '7. Maximum close change (%) allowed on entry', group='Filters', inline='FT7')
+FilterType7IncPct   = input.float(10.0, '', minval=0.0, step=0.5, group='Filters', inline='FT7')
+FilterType8         = input.bool(false, '8. Minimum close change (%) allowed on entry', group='Filters', inline='FT8')
+FilterType8IncPct   = input.float(1.0, '', minval=0.0, step=0.5, group='Filters', inline='FT8')
+FilterType9         = input.bool(false, '9. RSI OB/OS ↴           ', group='Filters')
+FilterType9Len      = input.int(20, '  ↳ Length', minval=2, group='Filters')
+FilterType9OS       = input.int(25, '  ↳ Oversold Level', minval=0, maxval=100, group='Filters')
+FilterType9OB       = input.int(75, '  ↳ Overbought Level', minval=0, maxval=100, group='Filters')
+FilterType10        = input.bool(false, '10. MA', group='Filters', inline='FT10')
+FilterType10MAType  = input.string('SMA', '', options=['SMA', 'EMA', 'WMA', 'RMA', 'VWMA', 'SWMA'], group='Filters', inline='FT10')
+FilterType10Source  = input.source(close, '', group='Filters', inline='FT10')
+FilterType10Len     = input.int(200, '', minval=1, group='Filters', inline='FT10', tooltip='MA Type, MA Source, MA Length\nLong = close > MA\nShort = close < MA')
+// FilterType10 = input(true, "10. Chandelier", group="Filters")
+// FilterType10Len = input(20, "... Length", minval=2, group="Filters")
+// FilterType10Mult = input(3, "... ATR Multiple", minval=0, step=0.25, group="Filters")
+// FilterType11 = input(false, "11. MA Squize", group="Filters")
+// FilterType11Len1 = input(5, "... Fast MA", minval=2, group="Filters")
+// FilterType11Len2 = input(21, "... Slow MA", minval=2,group="Filters")
+
+
+// // ————— F. In-trade stops
+InTradeStopType         = input.string(IS0, 'In-Trade Stop Selection', options=[IS0, IS1, IS2, IS3, IS4, IS5, IS8], group='In Trade Stops')
+InTradeStopDisabled     = InTradeStopType == IS0
+InTradeStopType1        = InTradeStopType == IS1
+InTradeStopType2        = InTradeStopType == IS2
+InTradeStopType3        = InTradeStopType == IS3
+InTradeStopType4        = InTradeStopType == IS4
+InTradeStopType5        = InTradeStopType == IS5
+InTradeStopType8        = InTradeStopType == IS8
+InTradeStopType1Mult    = input.float(1.0, '  1. X (Entry Stop\'s Amplitude) Multiple', minval=0.001, step=0.1, group='In Trade Stops', inline='If you have an Entry Stop this will be a multiple of the gap between the Entry and the Entry Stop')
+InTradeStopType2Pct     = input.float(2.0, '  2. %', minval=0.001, step=0.1, group='In Trade Stops')
+InTradeStopType3Val     = input.float(0.001, '  3. Value', minval=0.00000001, step=0.0001, group='In Trade Stops')
+InTradeStopType567Len   = input.int(20, '  5. ATR', minval=2, group='In Trade Stops', inline='5. In Trade Stop')
+InTradeStopType567Mult  = input.float(3.0, '', minval=0.001, step=0.5, group='In Trade Stops', inline='5. In Trade Stop', tooltip='ATR Multiple, ATR Length')
+
+InTradeKickType         = input.string(IK1, 'In-Trade Stop Kicks In When...', options=[IK1, IK2, IK3, IK4, IK5], group='In Trade Stop Kick In')
+InTradeKickType1        = InTradeKickType == IK1
+InTradeKickType2        = InTradeKickType == IK2
+InTradeKickType3        = InTradeKickType == IK3
+InTradeKickType4        = InTradeKickType == IK4
+InTradeKickType5        = InTradeKickType == IK5
+InTradeKickType2Mult    = input.float(2.0, '  2. X Multiple (+ is in trade direction, - is against)', step=0.05, group='In Trade Stop Kick In', tooltip='Make sure you have an Entry Stop in place for this to be effective.')
+InTradeKickType3Pct     = input.float(3.0, '  3. %  (+/-)', step=0.1, group='In Trade Stop Kick In')
+InTradeKickType4Val     = input.float(0.001, '  4. Value  (+/-)', step=0.0001, group='In Trade Stop Kick In')
+InTradeKickType5Pct     = input.float(2.0, '  5. %  (+/-)', step=0.1, group='In Trade Stop Kick In') / 100
+
+// ————— G. Pyramiding rules
+Pyramiding              = input.string(PY1, 'Pyramiding', options=[PY1, PY3], group='Pyramiding', inline='Pyramiding Amount')
+PyramidingOff           = Pyramiding == PY1
+PyramidingOn            = Pyramiding == PY3
+PyramidingMaxCnt        = input.int(1, 'Max # of pyramiding entries', minval=1, group='Pyramiding', inline='Pyramiding Amount')
+PyramidingType          = input.string(PT6, 'Pyramiding is allowed...', options=[PT1, PT2, PT3, PT4, PT5, PT6], group='Pyramiding', inline='Pyramiding Type')
+PyramidingFilterNeeded  = input.bool(false, 'Filter must allow entry', group='Pyramiding', inline='Pyramiding Type')
+PyramidingPosMult       = input.float(1.0, 'Position Size Multiple of Original Entry Position', minval=0.00000001, step=0.1, group='Pyramiding')
+Pyramiding1MultX        = input.float(1.0, '  1. Multiple of X (stop)', minval=0.00000001, group='Pyramiding')
+Pyramiding2Pct          = input.float(2.0, '  2. % Increment', minval=0.00000001, group='Pyramiding')
+Pyramiding3Val          = input.float(0.00001, '  3. Price Increment', minval=0.00000001, group='Pyramiding')
+PyramidingType1         = not PyramidingOff and PyramidingType == PT1
+PyramidingType2         = not PyramidingOff and PyramidingType == PT2
+PyramidingType3         = not PyramidingOff and PyramidingType == PT3
+PyramidingType4         = not PyramidingOff and PyramidingType == PT4
+PyramidingType5         = not PyramidingOff and PyramidingType == PT5
+PyramidingType6         = not PyramidingOff and PyramidingType == PT6
+
+// ————— H. Hard Exits
+ExitType0               = input.bool(true, '0. Opposite Signal          ', group='Hard Exits', inline='Exit Type 0', tooltip='Trade will exit when opposite signal is detected.')
+i_rvrsePositionExit0    = input.bool(true, 'Reverse Position', group='Hard Exits', inline='Exit Type 0', tooltip='Trade will be exited and a new trade in the opposite direction will be opened on the next bar')
+ExitType1               = input.bool(false, '1. SROC Falling/Rising X ↴', group='Hard Exits', inline='Exit Type 1', tooltip='Trade will exit when the SROC changes from F/R to nothing.')
+Exit1Length             = input.int(7, '', minval=1, inline='Exit Type 1.0', group='Hard Exits')
+Exit1Smoothing          = input.int(10, '', minval=1, inline='Exit Type 1.0', group='Hard Exits', tooltip='ROC Length, ROC Smoothing Length')
+Exit1Source             = input.source(close, '', inline='Exit Type 1.1', group='Hard Exits')
+Exit1Fall               = input.int(8, '', inline='Exit Type 1.1', group='Hard Exits')
+Exit1Rise               = input.int(8, '', inline='Exit Type 1.1', group='Hard Exits', tooltip='ROC Source, # of Bars to be rising, # of bars to be falling')
+
+
+ExitType4               = input.bool(false, '4. RSI Crosses ↴           ', group='Hard Exits', inline='Exit Type 4')
+i_rvrsePositionExit4    = input.bool(false, 'Reverse Position', group='Hard Exits', inline='Exit Type 4', tooltip='Trade will be exited and a new trade in the opposite direction will be opened on the next bar')
+ExitType4Len            = input.int(14, '  ↳ Length', minval=2, group='Hard Exits')
+ExitType4LongLvl        = input.int(70, '  ↳ Exit Long Crossunder Level', minval=0, maxval=100, group='Hard Exits')
+ExitType4ShortLvl       = input.int(30, '  ↳ Exit Short Crossover Level', minval=0, maxval=100, group='Hard Exits')
+ExitType6               = input.bool(false, '6. When Take Profit Level (multiple of X) is reached', group='Hard Exits', inline='ET6')
+ExitType6Mult           = input.float(2.0, '', minval=0.0, group='Hard Exits', inline='ET6', tooltip='X Multiple is your stop gap.')
+ExitType7               = input.bool(false, '7. When % change is reached', group='Hard Exits', inline='ET7')
+ExitType7Pct            = input.float(2.0, '', minval=0.0, group='Hard Exits', inline='ET7') / 100
+ExitType8               = input.bool(false, '8. When % gain (equity) is reached', group='Hard Exits', inline='ET8')
+ExitType8Pct            = input.float(2.0, '', minval=0.0, group='Hard Exits', inline='ET8') / 100
+
+// ————— I. Slippage
+SlippageType        = input.string(SL3, 'Slippage', options=[SL1, SL2, SL3], group='Slippage')
+SlippageType2InPct  = input.float(0.25, '  2. % Slippage on Entry', minval=0.0, step=0.1, group='Slippage')
+SlippageType2OutPct = input.float(0.25, '  2. % Slippage on Exit', minval=0.0, step=0.1, group='Slippage')
+SlippageType3InVal  = input.float(0, '  3. Fixed Slippage on Entry (Ticks)', minval=0.0, step=0.0001, group='Slippage', confirm=true)
+SlippageType3OutVal = input.float(0, '  3. Fixed Slippage on Exit (Ticks)', minval=0.0, step=0.0001, group='Slippage', confirm=true)
+SlippageType2       = SlippageType == SL2
+SlippageType3       = SlippageType == SL3
+
+// ————— J. Fees
+FeesType        = input.string(FE2, 'Fees', options=[FE1, FE2, FE3], group='Fees')
+FeesType2InPct  = input.float(0.1, '  2. % of Position on Entry (Curr)', minval=0.0, step=0.1, group='Fees', confirm=true)
+FeesType2OutPct = input.float(0.1, '  2. % of Position on Exit (Curr)', minval=0.0, step=0.1, group='Fees', confirm=true)
+FeesType3InVal  = input.float(10.0, '  3. Fixed Amount on Entry (Curr)', minval=0.0, group='Fees')
+FeesType3OutVal = input.float(10.0, '  3. Fixed Amount on Exit (Curr)', minval=0.0, group='Fees')
+FeesType2       = FeesType == FE2
+FeesType3       = FeesType == FE3
+
+
+// ————— M. Date range filtering
+DateFilter      = input.bool(false, 'Date Range Filtering', group='Date Filter')
+FromDate        = input.time(title='  From Date', defval=timestamp('19 Feb 2021 00:00 +0000'), group='Date Filter')
+ToDate          = input.time(title='  To Date', defval=timestamp('13 Mar 2021 00:00 +0000'), group='Date Filter')
+TradeDateIsAllowed() =>
+    DateFilter ? time >= FromDate and time <= ToDate : true
+
+
+// ————— O. Position sizing
+PosType         = input.string(PS2, 'Position Sizing', options=[PS1, PS2, PS3], group='Position Sizing')
+PosType1        = PosType == PS1
+PosType2        = PosType == PS2
+PosType3        = PosType == PS3
+PosTypeCapital  = input.float(100000.0, title='Initial Capital (In Units of Currency)', minval=0.0, step=10000, group='Position Sizing', confirm=true)
+PosType1Risk    = input.float(1.0, title='  1. % of Equity Risked Per Trade', minval=0.0, maxval=100.0, step=0.1, group='Position Sizing', tooltip=' (Stop % * Position)')
+PosType1Cap     = input.float(50.0, title='  1. Cap on position sizes (% of Equity)', minval=0.0, maxval=100.0, step=10.0, group='Position Sizing')
+PosType2Pct     = input.float(1.0, title='  2. % of Equity', minval=0.0, maxval=100.0, step=1.0, group='Position Sizing', confirm=true)
+PosType3Pct     = input.float(10.0, title='  3. % of Initial Capital', minval=0.0, maxval=100.0, step=5.0, group='Position Sizing')
+
+// ————— P. Risk Tolerance
+i_RiskMaxDrawdown   = input.float(30.0, 'Max % Of Equity Drawdown Tolerated', confirm=true, tooltip='If DD exceeds this amount, the strategy will continue to run, but an alert will be generated. This also affects the table colors.', group='Risk Tolerance')
+i_RiskMaxDrawdownCB = input.float(50.0, 'Max % Of Equity Drawdown Circuit Breaker', confirm=true, tooltip='If DD exceeds this amount, the strategy will stop.', group='Risk Tolerance')
+
+
+
+
+// ————— Q. Functions
+f_roc() =>
+    // Rate of Change Function
+    100 * math.log(Exit1Source / Exit1Source[Exit1Length])
+
+f_getMA(_maType, _maSource, _maLength) =>
+    if _maType == 'SMA'
+        ta.sma(_maSource, _maLength)
+    else if _maType == 'EMA'
+        ta.ema(_maSource, _maLength)
+    else if _maType == 'WMA'
+        ta.wma(_maSource, _maLength)
+    else if _maType == 'VWMA'
+        ta.vwma(_maSource, _maLength)
+    else if _maType == 'RMA'
+        ta.rma(_maSource, _maLength)
+    else if _maType == 'SWMA'
+        ta.swma(_maSource)
+
+
+
+
+
+// ——————————————— Strategies.
+f_RSICross() =>
+    rsi   = ta.rsi(close, 14)
+    
+    Long  = ta.crossover(rsi, 30)
+    Short = ta.crossunder(rsi, 70)
+
+    Signal = Long ? 1 : Short ? -1 : 0
+    Signal
+
+
+
+// Customize these two for your own entry strategies.
+// You can add in a function or customize the function itself.
+f_entryStrategyA() =>
+    f_RSICross()
+    
+f_entryStrategyB() =>
+    Long  = false
+    Short = false
+    Signal = Long ? 1 : Short ? -1 : 0
+    Signal
+
+
+f_strategies(_strategy) =>
+    // Function to aggregate strategies and convert binary signals to bool
+    // [bool, bool]
+
+    // Signal = 0
+    Signal = if EntryType1 and _strategy == EN1
+        f_entryStrategyA()
+    else if EntryType2 and _strategy == EN2
+        f_entryStrategyB()
+    else
+        0
+
+    Long = Signal == 1
+    Short = Signal == -1
+    [Long, Short]
+
+// ENTRY Functions
+f_getEntry(InTrade, FilterLongOK, FilterShortOK) =>
+
+    // ————— Entry 1: Entry Strategy A
+    [Entry1Long, Entry1Short] = f_strategies(EN1)
+
+    // ————— Entry 2: Entry Strategy B
+    [Entry2Long, Entry2Short] = f_strategies(EN2)
+
+    // ———————————————————— Get entry number (positive for longs, negative for shorts).
+    // Distinguish between A and B selections.
+    EntryNumberA = Entry1Long and EntryA == EN1 ? 1 : 
+                   Entry2Long and EntryA == EN2 ? 2 : 
+                   Entry1Short and EntryA == EN1 ? -1 : 
+                   Entry2Short and EntryA == EN2 ? -2 : 0
+
+    EntryNumberB = Entry1Long and EntryB == EN1 ? 1 :
+                   Entry2Long and EntryB == EN2 ? 2 :
+                   Entry1Short and EntryB == EN1 ? -1 : 
+                   Entry2Short and EntryB == EN2 ? -2 :  0
+
+
+    // Entry A numbers are as is, entry B numbers get 100 added/subtracted.
+    EntryNumber = EntryNumberA != 0 ? EntryNumberA : 
+                  EntryNumberB != 0 ? EntryNumberB + (EntryNumberB > 0 ? 100 : -100) : 0
+    EntryNumber := EntryAReverse and EntryNumberA != 0 ? -EntryNumber :  
+                   EntryBReverse and EntryNumberB != 0 ? -EntryNumber : EntryNumber
+    EntryNumber
+
+// HELPER Functions
+OneZero(_bool) =>
+    _bool ? 1 : 0
+
+
+// ————— Converts current chart timeframe into a float minutes value.
+f_resInMinutes() =>
+    _resInMinutes = timeframe.multiplier * (timeframe.isseconds ? 1. / 60 : timeframe.isminutes ? 1. : timeframe.isdaily ? 60. * 24 : timeframe.isweekly ? 60. * 24 * 7 : timeframe.ismonthly ? 60. * 24 * 30.4375 : na)
+    _resInMinutes
+
+f_barsToDays(_bars) =>
+    _minutes = f_resInMinutes() * _bars
+    _days = _minutes / 60 / 24
+    _days
+
+f_timeToString(_t) =>
+    str.tostring(year(_t), '0000') + '.' + str.tostring(month(_t), '00') + '.' + str.tostring(dayofmonth(_t), '00') + ' ' + str.tostring(hour(_t), '00') + ':' + str.tostring(minute(_t), '00') + ':' + str.tostring(second(_t), '00')
+
+
+// DRAWDOWN Functions
+f_getMaxDD(InTradeEquity, _initialCapital) =>
+    // ————— Max drawdown (measured at every in-trade bar).
+    // This max drawdown calc needs to maintain separate max and min equity points.
+    // We are re-evaluating the max and min at each in-trade bar.
+    // All-time in-trade equity high and min. Min resets when new high encountered.
+
+    // Different than strategy tester which is based off trade-by-trade max Cumulative Profit - min cumulative profit.
+    // More accurate this way becuase we see drawdown during trades.
+    // Still based on Close-to-close and not high/low
+
+    // ——————————————— Drawdown.
+    // ————— Max drawdown (using InTradeEquity measured at every bar but only changes during in-trade bars).
+    EquityMax = 0.0
+    EquityMax := math.max(InTradeEquity, nz(EquityMax[1]))
+
+    // Reset min when new high encountered.
+    EquityMin = 0.0
+    EquityMin := ta.change(EquityMax) ? EquityMax : math.min(InTradeEquity, nz(EquityMin[1]))
+
+    // Max drawdown in equity. Percent
+    Drawdown = (EquityMin - EquityMax) / EquityMax
+    MaxDrawdown = 0.0
+    MaxDrawdown := math.min(Drawdown, nz(MaxDrawdown[1]))
+    // label.new(bar_index, high, tostring(Drawdown))
+    // Drawdown Peak to Trough Equity
+    MaxPTDrawdown = 0.0
+    MaxPTDrawdown := math.min((EquityMin - EquityMax) * _initialCapital, nz(MaxPTDrawdown))
+
+    // Maximum Drawdown Duration (MDD) - The longest duration of a drawdown in equity prior to a new equity peak. 
+    // This number is important to help us psychologically understand how long we can expect to wait for a new peak in account equity. 
+    var int MaxDDDur = 0
+    var int MaxDDDurCount = 0
+    MaxDDDurCount := EquityMax > 0 and TradeDateIsAllowed() ? ta.change(EquityMax) ? 0 : MaxDDDurCount + 1 : 0  // Warning has no effect on accuracy
+    MaxDDDur := math.max(MaxDDDurCount, MaxDDDur)
+
+
+    // Maximum Drawdown - Max peak-to-valley equity drawdown during backtesting period. This number defines the minimum amount of capital required to trade the system. Typically, this shouldn’t be lower than 34% and we will want to allow for at least 50% beyond this number.
+    // MaxDDPct  = round(MaxDrawdown*100,2)   // Percent
+    // MaxDDPT   = round(MaxPTDrawdown, 2)    // Absolute
+
+
+    [MaxDrawdown * 100, MaxPTDrawdown, f_barsToDays(MaxDDDur)]
+
+
+f_getMCL(Equity, Trades, All_Losing) =>
+    // Maximum Consecutive Losses (MCL) - The max consecutive losses endured throughout the backtesting period. Another important metric for trader psychology, this will help you understand how many losses you should be prepared to handle in order to achieve netprofit.
+    var int ConsecutiveLossesCount = 0
+    ConsecutiveLossesCount := ta.change(Trades) ? ta.change(All_Losing) ? ConsecutiveLossesCount + 1 : 0 : ConsecutiveLossesCount  // Warning has no effect on accuracy.
+    var int MaxConsecutiveLosses = 0
+    MaxConsecutiveLosses := math.max(ConsecutiveLossesCount, MaxConsecutiveLosses)
+    MaxConsecutiveLosses
+
+
+// Aggregate All data 
+f_getData(_initialCapital) =>
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // —————————————————————————————————————— 1. Variable Initializations —————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // We declare global and trade vars and propagate values for those that need it.
+    // Vars holding global stats for all trades are divided in 4 groups: Combined (First and pyramided entries), First entries, Pyramided entries and PEA (Post-Exit Analysis).
+    // They start with All_, First_, Pyr_ or PEA_ respectively.
+    // So-called local vars hold data relating to one trade at a time. They use the same prefix, without an underscore.
+
+    // We deal with 4 different units in the code:
+    //  1.  Quote currency (quote), i.e. the price on the chart.
+    //  2.  X (X): the stop's amplitude,
+    //  3.  Currency (curr): the currency of the Initial Capital.
+    //  4.  % of Initial Capital (equ): a % representing a fraction of Initial Capital.
+
+    // ———————————————————— A. Global data.
+    // ————— Global stats (1st and pyramided entries)
+    // All entries.
+    All_Entries = 0
+    All_Entries := nz(All_Entries[1])
+    // All fees paid (equ).
+    All_FeesEqu = 0.0
+    All_FeesEqu := nz(All_FeesEqu[1])
+    // Sum and avg of PLX (P&L expressed as mult of X).
+    All_PLXTot = 0.0
+    All_PLXTot := nz(All_PLXTot[1])
+    All_PLXAvg = 0.0
+    All_PLXAvg := nz(All_PLXAvg[1])
+    // Total of all Entry position sizes (equ).
+    All_PositionInTot = 0.0
+    All_PositionInTot := nz(All_PositionInTot[1])
+    // Profit factor.
+    All_ProfitFactor = 0.0
+    All_ProfitFactor := nz(All_ProfitFactor[1])
+    // All slippage paid (equ).
+    All_SlipEqu = 0.0
+    All_SlipEqu := nz(All_SlipEqu[1])
+    // Sum and avg of trade lengths.
+    All_TradeLengthsTot = 0.0
+    All_TradeLengthsTot := nz(All_TradeLengthsTot[1])
+    All_TradeLengthsAvg = 0.0
+    All_TradeLengthsAvg := nz(All_TradeLengthsAvg[1])
+    // All currency volume traded (both entries and exits counted).
+    All_VolumeTraded = 0.0
+    All_VolumeTraded := nz(All_VolumeTraded[1])
+    // Sum of all winning/losing trades.
+    All_Winning = 0
+    All_Winning := nz(All_Winning[1])
+    All_Losing = 0
+    All_Losing := nz(All_Losing[1])
+    // Sum of winning/losing trade lengths.
+    All_WinsTL = 0.0
+    All_WinsTL := nz(All_WinsTL[1])
+    All_LoseTL = 0.0
+    All_LoseTL := nz(All_LoseTL[1])
+    // P&L total (X) of all winning/losing trades.
+    All_WinsX = 0.0
+    All_WinsX := nz(All_WinsX[1])
+    All_LoseX = 0.0
+    All_LoseX := nz(All_LoseX[1])
+    // P&L total (equ) of all winning/losing trades.
+    All_WinsEqu = 0.0
+    All_WinsEqu := nz(All_WinsEqu[1])
+    All_LoseEqu = 0.0
+    All_LoseEqu := nz(All_LoseEqu[1])
+    // Average Winning Trade, and Average Losing Trade
+    All_AvgWin = 0.0
+    All_AvgWin := nz(All_AvgWin[1])
+    All_AvgLos = 0.0
+    All_AvgLos := nz(All_AvgLos[1])
+    // Sum and avg of all stops (quote).
+    All_XTot = 0.0
+    All_XTot := nz(All_XTot[1])
+    All_XAvg = 0.0
+    All_XAvg := nz(All_XAvg[1])
+    // Sum and avg of all stops (equ).
+    All_XEquTot = 0.0
+    All_XEquTot := nz(All_XEquTot[1])
+    All_XEquAvg = 0.0
+    All_XEquAvg := nz(All_XEquAvg[1])
+    // Sum and avg of all stops as percentage of fill.
+    All_XPctTot = 0.0
+    All_XPctTot := nz(All_XPctTot[1])
+    All_XPctAvg = 0.0
+    All_XPctAvg := nz(All_XPctAvg[1])
+
+    // ————— First entry stats.
+    First_Entries = 0
+    First_Entries := nz(First_Entries[1])
+    First_FeesEqu = 0.0
+    First_FeesEqu := nz(First_FeesEqu[1])
+    First_PLXTot = 0.0
+    First_PLXTot := nz(First_PLXTot[1])
+    First_PLXAvg = 0.0
+    First_PLXAvg := nz(First_PLXAvg[1])
+    First_PositionInTot = 0.0
+    First_PositionInTot := nz(First_PositionInTot[1])
+    First_ProfitFactor = 0.0
+    First_ProfitFactor := nz(First_ProfitFactor[1])
+    First_SlipEqu = 0.0
+    First_SlipEqu := nz(First_SlipEqu[1])
+    First_TradeLengthsTot = 0.0
+    First_TradeLengthsTot := nz(First_TradeLengthsTot[1])
+    First_TradeLengthsAvg = 0.0
+    First_TradeLengthsAvg := nz(First_TradeLengthsAvg[1])
+    First_VolumeTraded = 0.0
+    First_VolumeTraded := nz(First_VolumeTraded[1])
+    First_Winning = 0
+    First_Winning := nz(First_Winning[1])
+    First_Losing = 0
+    First_Losing := nz(First_Losing[1])
+    First_WinsTL = 0
+    First_WinsTL := nz(First_WinsTL[1])
+    First_LoseTL = 0
+    First_LoseTL := nz(First_LoseTL[1])
+    // First_WinsX = 0.0, First_WinsX := nz(First_WinsX[1])
+    // First_LoseX = 0.0, First_LoseX := nz(First_LoseX[1])
+    First_WinsEqu = 0.0
+    First_WinsEqu := nz(First_WinsEqu[1])
+    First_LoseEqu = 0.0
+    First_LoseEqu := nz(First_LoseEqu[1])
+    First_XTot = 0.0
+    First_XTot := nz(First_XTot[1])
+    First_XAvg = 0.0
+    First_XAvg := nz(First_XAvg[1])
+    First_XEquTot = 0.0
+    First_XEquTot := nz(First_XEquTot[1])
+    First_XEquAvg = 0.0
+    First_XEquAvg := nz(First_XEquAvg[1])
+    First_XPctTot = 0.0
+    First_XPctTot := nz(First_XPctTot[1])
+    First_XPctAvg = 0.0
+    First_XPctAvg := nz(First_XPctAvg[1])
+
+    // ————— Pyramiding
+    // All pyramid entries.
+    Pyr_Entries = 0
+    Pyr_Entries := nz(Pyr_Entries[1])
+    Pyr_PLXTot = 0.0
+    Pyr_PLXTot := nz(Pyr_PLXTot[1])
+    Pyr_PLXAvg = 0.0
+    Pyr_PLXAvg := nz(Pyr_PLXAvg[1])
+    Pyr_ProfitFactor = 0.0
+    Pyr_ProfitFactor := nz(Pyr_ProfitFactor[1])
+    Pyr_VolumeTraded = 0.0
+    Pyr_VolumeTraded := nz(Pyr_VolumeTraded[1])
+    Pyr_Winning = 0
+    Pyr_Winning := nz(Pyr_Winning[1])
+    Pyr_Losing = 0
+    Pyr_Losing := nz(Pyr_Losing[1])
+    Pyr_WinsEqu = 0.0
+    Pyr_WinsEqu := nz(Pyr_WinsEqu[1])
+    Pyr_LoseEqu = 0.0
+    Pyr_LoseEqu := nz(Pyr_LoseEqu[1])
+
+
+
+    // ————— Risk/Equity management.
+    // Starting Equity in the script is represented as value 1.0. It is converted at display time in units of currency
+    // corresponding to whatever the user thinks he's using in the "Initial Capital" field.
+    // Equity = Initial Capital + P&L. If equity reaches 0.0, ruin occurs and no more trades are entered.
+    Equity = float(na)
+    Equity := nz(Equity[1], 1.0)
+    // Current ROI.
+    ReturnOnEquity = 0.0
+    ReturnOnEquity := nz(ReturnOnEquity[1])
+    // True if ruin occurs.
+    Ruin = false
+    Ruin := Ruin[1]
+
+    // ————— Risk Tolerance.
+    // True if i_RiskMaxDrawdownCB is exceeded
+    CircuitBreaker = false
+    CircuitBreaker := CircuitBreaker[1]
+
+    // ————— Close to close max drawdown (only measured from trade close to trade close).
+    // Max and min close to close equity points, and end of trade max drawdown reached. Reset min when new high encountered.
+    CToCEquityMax = 0.0
+    CToCEquityMin = 0.0
+    CToCDrawdown = 0.0
+    // Max close to close drawdown in equity.
+    CToCMaxDrawdown = 0.0
+    CToCMaxDrawdown := nz(CToCMaxDrawdown[1])
+
+
+    // Equity update in-trade to provide full equity max drawdown instead of close to close drawdown.
+    InTradeEquity = 0.0
+    InTradeEquity := nz(InTradeEquity[1])
+    InTradeStartEquity = 0.0
+    InTradeStartEquity := nz(InTradeStartEquity[1])
+
+
+    // ———————————————————— B. Local data.
+    // "Local" refers to data that is maintained while a trade is open or a PEA is ongoing.
+    // ————— Trade management.
+    // Entry level (open of bar following trigger).
+    EntryOrder = 0.0
+    EntryOrder := EntryOrder[1]
+    // Entry price after slippage.
+    EntryFill = 0.0
+    EntryFill := EntryFill[1]
+    // Stop level at Entry.
+    EntryStop = 0.0
+    EntryStop := EntryStop[1]
+    // Entry stop amplitude in quote, from fill to stop (so includes slippage).
+    entryStopGap = 0.0
+    entryStopGap := entryStopGap[1]
+    // Entry stop as % of entry fill.
+    EntryXPct = 0.0
+    EntryXPct := EntryXPct[1]
+    // Entry stop (equ).
+    EntryXEqu = 0.0
+    EntryXEqu := EntryXEqu[1]
+    // Exit level (order).
+    ExitOrder = 0.0
+    ExitOrder := ExitOrder[1]
+    // Exit fill after slippage.
+    ExitFill = 0.0
+    ExitFill := ExitFill[1]
+    // Fees paid on entry (equ).
+    FeesPaidIn = 0.0
+    FeesPaidIn := FeesPaidIn[1]
+    // Fees paid on exit (equ).
+    FeesPaidOut = 0.0
+    FeesPaidOut := FeesPaidOut[1]
+    // Holds last issued entry signal: + for longs, - for shorts.
+    LastEntryNumber = 0
+    LastEntryNumber := LastEntryNumber[1]
+    // Last entry's price level, whether it was a normal or pyramided entry.
+    LastEntryPrice = 0.0
+    LastEntryPrice := LastEntryPrice[1]
+    // Position size at entry (equ).
+    PositionIn = 0.0
+    PositionIn := PositionIn[1]
+    // Position size at exit (equ).
+    PositionOut = 0.0
+    PositionOut := PositionOut[1]
+    // Slippage incurred on entry (quote).
+    SlipPaidIn = 0.0
+    SlipPaidIn := SlipPaidIn[1]
+    // Slippage incurred on exit (quote).
+    SlipPaidOut = 0.0
+    SlipPaidOut := SlipPaidOut[1]
+    // Total trade slippage (equ).
+    SlippageEqu = 0.0
+    SlippageEqu := SlippageEqu[1]
+    // Target level for hard exits.
+    TakeProfitLevel = 0.0
+    TakeProfitLevel := TakeProfitLevel[1]
+    // Trade length in bars.
+    TradeLength = 0
+    TradeLength := TradeLength[1]
+    // Max in-trade drawdown.
+    TradeMaxDrawdown = 0.0
+    TradeMaxDrawdown := TradeMaxDrawdown[1]
+
+    EntryNumber = 0  // Current first entry number throughout trade.
+    // EntryNumberA = 0        // Current first entry number from selecton A.
+    // EntryNumberB = 0        // Current first entry number from selecton B.
+    InTradeStop = 0.0  // Last valid in-trade stop (we always use previous bar's stop for comparison to price, so must be used indexed).
+    MaxReached = 0.0  // Max high/low reached since beginning of trade.
+    MinReached = 0.0  // Min high/low reached since beginning of trade.
+    TradeDrawdown = 0.0  // Discrete drawdown at each bar in trade's history, to be used to determine trade max drawdown.
+    TradePLX = 0.0  // Trade PL (X), after slippage.
+    // TradePLXMax = 0.0       // Highest PL (X) reached during trade.
+    // TradePLXMin = 0.0       // Lowest PL (X) reached during trade.
+    // TradePLPct = 0.0       // Trade PL (%) after slippage.
+    TradePLEqu = 0.0  // Net trade PL (equ), i.e. including slippage AND fees.
+
+    // ————— Pyramiding.
+    PyrEntries = 0
+    PyrEntries := nz(PyrEntries[1])
+    PyrEntryBarTot = 0
+    PyrEntryBarTot := nz(PyrEntryBarTot[1])
+    PyrEntryBarAvg = 0.0
+    PyrEntryBarAvg := nz(PyrEntryBarAvg[1])
+    PyrEntryFill = 0.0
+    PyrEntryFillTot = 0.0
+    PyrEntryFillTot := nz(PyrEntryFillTot[1])
+    PyrEntryFillAvg = 0.0
+    PyrEntryFillAvg := nz(PyrEntryFillAvg[1])
+    PyrEntryOrder = 0.0
+    PyrEntryX = 0.0
+    PyrEntryX := nz(PyrEntryX[1])
+    PyrEntryXTot = 0.0
+    PyrEntryXTot := nz(PyrEntryXTot[1])
+    PyrEntryXAvg = 0.0
+    PyrEntryXAvg := nz(PyrEntryXAvg[1])
+    PyrEntryXPctTot = 0.0
+    PyrEntryXPctTot := nz(PyrEntryXPctTot[1])
+    PyrEntryXPctAvg = 0.0
+    PyrEntryXPctAvg := nz(PyrEntryXPctAvg[1])
+    PyrFeesEquTot = 0.0
+    PyrFeesEquTot := nz(PyrFeesEquTot[1])
+    PyrFeesPaidIn = 0.0
+    PyrFeesPaidOut = 0.0
+    PyrEntryXPct = 0.0
+    PyrPositionIn = 0.0
+    PyrPositionOut = 0.0
+    PyrPositionInTot = 0.0
+    PyrPositionInTot := nz(PyrPositionInTot[1])
+    PyrPositionInAvg = 0.0
+    PyrPositionInAvg := nz(PyrPositionInAvg[1])
+    PyrPositionInQtyTot = 0.0
+    PyrPositionInQtyTot := nz(PyrPositionInQtyTot[1])
+    PyrSlipPaidEqu = 0.0
+    PyrSlipPaidIn = 0.0
+    PyrSlipPaidOut = 0.0
+    PyrSlipEquTot = 0.0
+    PyrSlipEquTot := nz(PyrSlipEquTot[1])
+    PyrTradePLX = 0.0
+    PyrTradePLPct = 0.0
+    PyrTradePLEqu = 0.0
+    PyrTradeLengthsTot = 0
+    PyrTradeLengthsTot := nz(PyrTradeLengthsTot[1])
+    PyrTradeLengthsAvg = 0.0
+    PyrTradeLengthsAvg := nz(PyrTradeLengthsAvg[1])
+
+
+    // ———————————————————— C. State and misc vars.
+    // These variables get updated after triggers and during trades.
+    // They do not require propagation because they are derived from the state of other propagated information or previous states.
+    EntryTrigger = false  // True when an entry trigger is detected.
+    ExitTrigger = false  // True when an exit trigger is detected
+    PyramidEntry = false  // True when a long/short pyramid entry occurs.
+    InTrade = false  // True when in InLong or InShort is true.
+    ExitCondition = false  // True when stop breached, take profit or target level reached.
+    // ————— Longs
+    LongEntryTrigger = false  // Becomes true on the bar when entry order is to be issued; false otherwise.
+    InLong = false  // True from bar after entry trigger to bar of exit trigger, inclusively.
+    // ————— Shorts
+    ShortEntryTrigger = false  // Becomes true on the bar when entry order is to be issued; false otherwise.
+    InShort = false  // True from bar after entry trigger to bar of exit trigger, inclusively.
+
+
+    // Not sure where to put this. But needs to be propagated
+    // ------ Stops
+    StoppedCondition = false
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ——————————————————————————————————————————— 3. Entry Stops —————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ————— OHLC rounded to mintick (used to standardize values across test as mintick sometimes varies during dataset).
+    // Although situated in this module, are used all over the script.
+    Ropen = math.round_to_mintick(open)
+    Rhigh = math.round_to_mintick(high)
+    Rlow = math.round_to_mintick(low)
+    Rclose = math.round_to_mintick(close)
+    // ————— Lowest/highest of open/close
+    MinOC = math.round_to_mintick(math.min(open, close))
+    MaxOC = math.round_to_mintick(math.max(open, close))
+    // ————— Entry Stops init.
+    EntryStopLong = MinOC
+    EntryStopShort = MaxOC
+    // Entry Stops are pre-calculated every bar so they are always at hand upon entering.
+    // They cannot depend on information like a trade entry level as they must be calculated prior to entry.
+    // // The entry stop wil be taken over by the In-trade stop when its kick-in rules allow for it.
+
+    // ————— Entry Stop 2: ATR*Multiple
+    EntryStop2_Atr = EntryStopType2 ? nz(ta.atr(EntryStopType2Len)) : 0
+    EntryStop2_AtrGap = EntryStop2_Atr * EntryStopType2Mult
+    EntryStop2Long = MinOC - EntryStop2_AtrGap
+    EntryStop2Short = MaxOC + EntryStop2_AtrGap
+    // ————— Entry Stop 3: Fixed Percent
+    EntryStop3Long = MinOC * (1.0 - EntryStopType3Pct / 100)
+    EntryStop3Short = MaxOC * (1.0 + EntryStopType3Pct / 100)
+
+    // ———————————————————— Select Entry Stop chosen by user.
+    EntryStopLong_ = EntryStopType2 ? EntryStop2Long : EntryStopType3 ? EntryStop3Long : 0.0
+    EntryStopShort_ = EntryStopType2 ? EntryStop2Short : EntryStopType3 ? EntryStop3Short : 9e99
+    // Round stop to tick size.
+    EntryStopLong := math.round_to_mintick(EntryStopLong_)
+    EntryStopShort := math.round_to_mintick(EntryStopShort_)
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————— 4. Filters ———————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ** If adding a new filter, be sure to include in Entry for Filter States
+
+    // ————— Filter 1: Random
+    Filter1Long = FilterType1 ? math.round(math.random(0, 10, 1)) == 1 : true
+    Filter1Short = FilterType1 ? math.round(math.random(0, 10, 1)) == 1 : true
+    // ————— Filter 2: MACD Hist
+    _macdLine = FilterType2 ? nz(f_getMA('EMA', close, FilterType2Len1) - f_getMA('EMA', close, FilterType2Len2)) : 0.
+    _macdSignal = FilterType2 ? nz(f_getMA('EMA', _macdLine, FilterType2Len3)) : 0.
+    _macdHist = FilterType2 ? _macdLine - _macdSignal : 0.
+    Filter2Long = FilterType2 ? _macdHist > 0 : true
+    Filter2Short = FilterType2 ? _macdHist < 0 : true
+
+    // ————— Filter 3: Bar direction
+    Filter3Long = FilterType3 ? close > open : true
+    Filter3Short = FilterType3 ? close < open : true
+    // ————— Filter 4: Rising volume
+    Filter4Long = FilterType4 ? ta.rising(volume, 1) : true
+    Filter4Short = Filter4Long
+    // ————— Filter 5: Rising/Falling MA
+    Filter5Ma = FilterType5 ? nz(f_getMA('SMA', close, FilterType5Len)) : 0
+    Filter5Long = FilterType5 ? ta.rising(Filter5Ma, FilterType5Bars) : true
+    Filter5Short = FilterType5 ? ta.falling(Filter5Ma, FilterType5Bars) : true
+    // ————— Filter 6: Maximum risk allowed at entry
+    Filter6Long = FilterType6 ? close - EntryStopLong < close * FilterType6MaxRisk / 100 : true
+    Filter6Short = FilterType6 ? EntryStopShort - close < close * FilterType6MaxRisk / 100 : true
+    // ————— Filter 7: Maximum delta with previous close allowed at entry
+    Filter7Long = FilterType7 ? close < close[1] * (1 + FilterType7IncPct / 100) : true
+    Filter7Short = FilterType7 ? close > close[1] * (1 - FilterType7IncPct / 100) : true
+    // ————— Filter 8: Minimum delta with previous close allowed at entry
+    Filter8Long = FilterType8 ? close > close[1] * (1 + FilterType8IncPct / 100) : true
+    Filter8Short = FilterType8 ? close < close[1] * (1 - FilterType8IncPct / 100) : true
+
+    // ————— Filter 9: RSI OS/OB
+    Rsi = FilterType9 ? ta.rsi(close, FilterType9Len) : 0
+    RsiOS = Rsi < FilterType9OS
+    RsiOB = Rsi > FilterType9OB
+    Filter9Long = FilterType9 ? not RsiOB : true
+    Filter9Short = FilterType9 ? not RsiOS : true
+    // ————— Filter 10: Moving Average
+    Filter10Ma = FilterType10 ? f_getMA(FilterType10MAType, FilterType10Source, FilterType10Len) : 0.
+    Filter10Long = FilterType10 ? close > Filter10Ma : true
+    Filter10Short = FilterType10 ? close < Filter10Ma : true
+    // ————— Filter 10: Chandelier
+    // Filter10Long = FilterType10? C2Bull : true
+    // Filter10Short = FilterType10? C2Bear : true
+    // ————— Filter 11: MA Squize
+    // Filter11Long = FilterType11? MASqzBull : true
+    // Filter11Short = FilterType11? MASqzBear : true
+
+
+    // ———————————————————— Assemble filters
+    FilterLongOK = Filter1Long and Filter2Long and Filter3Long and Filter4Long and Filter5Long and Filter6Long and Filter7Long and Filter8Long and Filter9Long and Filter10Long
+    FilterShortOK = Filter1Short and Filter2Short and Filter3Short and Filter4Short and Filter5Short and Filter6Short and Filter7Short and Filter8Short and Filter9Short and Filter10Short
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————— 5. Entries ———————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+
+    EntryNumber := f_getEntry(InTrade, FilterLongOK, FilterShortOK)
+
+    // ————— Whipsaw Waiting Period. Waits x bars after signal is generated. If an opposite signal is generated the waiting period is reset.
+    WhipSawWait = input.bool(false, 'WhipSaw Wait', group='Filters', inline='WSW', tooltip='Waits x bars after entry signal is generated. If an opposite signal is generated the waiting period is reset.')
+    WhipSawLen = input.int(3, '', group='Filters', inline='WSW')
+
+    if WhipSawWait
+        var _wait = false
+        var _waiting = 0
+        barsAgoLong = nz(ta.barssince(EntryNumber > 0))
+        barsAgoShort = nz(ta.barssince(EntryNumber < 0))
+        // Reset wait period if opposite signal happens within waiting period.
+        if ta.cross(barsAgoLong, barsAgoShort)
+            _waiting := 0
+            _waiting
+
+        var SavedEntryNumber = 0
+        if EntryNumber != 0 and WhipSawWait
+            _wait := true
+            SavedEntryNumber := EntryNumber
+            SavedEntryNumber
+
+        if _wait
+            _waiting := _waiting + 1
+            _waiting
+
+        if _wait and _waiting <= WhipSawLen
+            EntryNumber := 0
+            EntryNumber
+        else if _wait and _waiting > WhipSawLen
+            EntryNumber := SavedEntryNumber
+            _waiting := 0
+            _wait := false
+            _wait
+
+
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ————————————————————————————————— 6. Trade Entry and In-trade Processing ———————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // Here we:
+    //  A. Process 1st entries.
+    //  B. Process pyramided entries.
+    //  C. Update in-trade numbers for display purposes.
+
+    // ———————————————————— Trade state management
+    // ————— Determine if we have entered a trade and propagate state until we exit.
+    InLong := LongEntryTrigger[1] or InLong[1] and not ExitCondition[1]
+    InShort := ShortEntryTrigger[1] or InShort[1] and not ExitCondition[1]
+    // ————— Merge states for ease of logical testing.
+    InTrade := InLong or InShort
+    FirstEntry1stBar = EntryTrigger[1] and not PyramidEntry[1]
+    PyramidEntry1stBar = EntryTrigger[1] and PyramidEntry[1]
+
+
+    // ———————————————————— A. Process 1st entries.
+    // ————— If a trade's first entry (as opposed to pyramiding entries) must be entered, process it.
+    // While this code appears earlier in the script than the entry trigger detection that comes in module 10,
+    // it is only executed at the bar following the one where the trigger is detected.
+    if FirstEntry1stBar
+        // ————— Handle trade-opening tasks.
+        // Suppose market entry order is given at open.
+        EntryOrder := Ropen
+        // Begin counting trade length.
+        TradeLength := 1
+        // Reset max and min point reached during trade.
+        MaxReached := InLong ? Rhigh : Rlow
+        MinReached := InLong ? Rlow : Rhigh
+        // Save last issued signal number.
+        LastEntryNumber := EntryNumber[1]
+
+        // Calculate what slippage should be before hi/lo constraints.
+        SlipPaidIn := SlippageType2 ? math.round_to_mintick(EntryOrder * SlippageType2InPct / 100) : SlippageType3 ? math.round_to_mintick(SlippageType3InVal * syminfo.mintick) : 0.0
+        // Entry fill price including tentative slippage.
+        EntryFill := math.max(0.0, EntryOrder + (InLong ? SlipPaidIn : -SlipPaidIn))
+        // Cap fill to bar's hi/lo (can't slip more/less that hi/lo).
+        EntryFill := InLong ? math.min(Rhigh, EntryFill) : math.max(Rlow, EntryFill)
+        // Calculate actual slippage.
+        SlipPaidIn := math.abs(EntryFill - EntryOrder)
+        // Save fill for pyramiding rules validations.
+        LastEntryPrice := EntryFill
+        // Initialized upon entry and constant throughout trade, InTradeStop will usually take over in further trade management.
+        EntryStop := InLong ? EntryStopLong : EntryStopShort
+
+
+        // ————— Calculate X upon entry.
+        // This amplitude in quote currency is the fundamental unit of risk for the trade, which we call X.
+        // We also keep a version of it expressed as a % of the entry fill, and another in equ. Notice that entry slippage affects the size of X.
+        entryStopGap := math.abs(EntryFill - EntryStop)
+        EntryXPct := entryStopGap / EntryFill
+
+        // PositionIn size is determined according to user selection: Type 1 for relative pos size and fixed risk. Type 2 for fixed % of Equity. Type 3 for fixed % of initial capital.
+        PositionIn := math.min(Equity, PosType1 ? math.min(Equity * PosType1Cap / 100, Equity * PosType1Risk / 100 / EntryXPct) : PosType2 ? Equity * PosType2Pct / 100 : PosType3Pct / 100)
+        // % Fees are calculated on the PositionIn size. Fixed fees are in equ. Either way they end up being expressed in equ and will only later be deducted from trade's PL and Equity.
+        FeesPaidIn := FeesType2 ? PositionIn * FeesType2InPct / 100 : 0.0
+        // X (equ).
+        EntryXEqu := PositionIn * EntryXPct
+        // Convert slippage to equ units for display during trade.
+        SlippageEqu := SlipPaidIn / EntryOrder * PositionIn
+
+        ExitOrder := 0.0
+        ExitFill := 0.0
+        TakeProfitLevel := na
+        TradePLX := 0.0
+        // TradePLPct := 0.0
+        TradePLEqu := 0.0
+        // TradePLXMax := 0.0
+        // TradePLXMin := 0.0
+        SlipPaidOut := 0.0
+        FeesPaidOut := 0.0
+        TradeMaxDrawdown := 0.0
+
+        // Going to use this temp value to watch for a new maximum equity drawdown during the trade,
+        // leaving the real Equity unchanged until the end of the trade.
+        InTradeStartEquity := Equity
+        InTradeEquity := Equity
+        InTradeEquity
+    else
+        // ———————————————————— B. Process pyramided entries.
+        if PyramidEntry1stBar
+            // Count of pyramids in current trade.
+            PyrEntries := PyrEntries + 1
+            // Cumulative count of TLs for all pyramided entries. Adds 1 per bar per active entry.
+            PyrTradeLengthsTot := PyrTradeLengthsTot + PyrEntries
+            PyrTradeLengthsAvg := PyrTradeLengthsTot / PyrEntries
+            // Suppose market entry order is given at open.
+            PyrEntryOrder := Ropen
+            // Add slippage to entry.
+            PyrSlipPaidIn := SlippageType2 ? math.round_to_mintick(PyrEntryOrder * SlippageType2InPct / 100) : SlippageType3 ? math.round_to_mintick(SlippageType3InVal * syminfo.mintick) : 0.0
+            // Entry fill price including slippage.
+            PyrEntryFill := math.max(0.0, PyrEntryOrder + (InLong ? PyrSlipPaidIn : -PyrSlipPaidIn))
+            // Cap fill to hi/lo.
+            PyrEntryFill := InLong ? math.min(Rhigh, PyrEntryFill) : math.max(Rlow, PyrEntryFill)
+            // Update X. Need to use previous bar's in-trade stop as current one isn't calculated yet.
+            PyrEntryX := math.abs(PyrEntryFill - InTradeStop[1])
+            // Update X%. 
+            PyrEntryXPct := PyrEntryX / PyrEntryFill
+            // PositionIn size is determined according to user selection: Type 1 for relative pos size and fixed risk. Type 2 for fixed % of Equity. Type 3 for fixed % of initial capital.
+            PyrPositionIn := PyramidingPosMult * math.min(Equity, PosType1 ? math.min(Equity * PosType1Cap / 100, Equity * PosType1Risk / 100 / EntryXPct) : PosType2 ? Equity * PosType2Pct / 100 : PosType3Pct / 100)
+            // Also keep position size in units of asset.
+            PyrPositionInQty = PyrPositionIn * _initialCapital / PyrEntryFill
+            // % Fees are calculated on the PositionIn size. Fixed fees are in equ. Either way they end up being expressed in equ and will only later be deducted from trade's PL and Equity.
+            PyrFeesPaidIn := FeesType2 ? PyrPositionIn * FeesType2InPct / 100 : 0.0
+            // X (equ).
+            // PyrEntryXEqu := PyrPositionIn*PyrEntryXPct
+            // Convert slippage in equ.
+            PyrSlipPaidEqu := PyrSlipPaidIn / PyrEntryOrder * PyrPositionIn
+
+            // ————— Build totals and avgs for all pyramided entries in current trade.
+            // X (quote)
+            PyrEntryXTot := PyrEntryXTot + PyrEntryX
+            PyrEntryXAvg := PyrEntryXTot / PyrEntries
+            // X %
+            PyrEntryXPctTot := PyrEntryXPctTot + PyrEntryXPct
+            PyrEntryXPctAvg := PyrEntryXPctTot / PyrEntries
+            // Entry positions.
+            PyrPositionInTot := PyrPositionInTot + PyrPositionIn
+            PyrPositionInAvg := PyrPositionInTot / PyrEntries
+            PyrPositionInQtyTot := PyrPositionInQtyTot + PyrPositionInQty
+            // Average fill.
+            PyrEntryFillTot := PyrEntryFillTot + PyrEntryFill
+            PyrEntryFillAvg := PyrEntryFillTot / PyrEntries
+            // 1st entry's TL at pyr entry point. Use +1 because it hasn't been incremented yet!
+            PyrEntryBarTot := PyrEntryBarTot + TradeLength + 1
+            PyrEntryBarAvg := PyrEntryBarTot / PyrEntries
+            // Fees & Slippage.
+            PyrFeesEquTot := PyrFeesEquTot + PyrFeesPaidIn
+            PyrSlipEquTot := PyrSlipEquTot + PyrSlipPaidEqu
+            // Save last entry price to then calculate subsequent pyramiding rules.
+            LastEntryPrice := PyrEntryFill
+            LastEntryPrice
+
+
+        // ———————————————————— C. Update in-trade info. Also update some numbers for display purposes.
+        if InTrade
+            // ————— Update essential in-trade info.
+            // Increase trade length.
+            TradeLength := TradeLength + 1
+            // Update Max point reached during trade (used both for trailing stop reference point and in-trade max drawdown calcs).
+            MaxReached := InLong ? math.max(nz(MaxReached[1], Rhigh), Rhigh) : InShort ? math.min(nz(MaxReached[1], Rlow), Rlow) : na
+
+            // ————— Update in-trade max drawdown info (has nothing to do with max drawdown calcs later in this section).
+            // Since we only use the Min point to calculate in-trade max drawdown, reset it when a new max is found.
+            MinReached := ta.change(MaxReached) ? MaxReached : InLong ? math.min(nz(MinReached[1], Rlow), Rlow) : InShort ? math.max(nz(MinReached[1], Rhigh), Rhigh) : na
+            // Record current drawdown to build history of all drawdowns during trade.
+            TradeDrawdown := math.min(0.0, (MaxReached - MinReached) * (InLong[1] ? -1 : 1) / MaxReached)
+            // Find largest drawdown during trade.
+            TradeMaxDrawdown := math.min(TradeMaxDrawdown, TradeDrawdown)
+
+            // ————— Simulate a complete exit from close here to display provisional trade info.
+            // In this "display only mode" during trade, fees paid in or out are ignored. They will only be included in results at real exit.
+            ExitOrder := StoppedCondition[1] ? EntryStop : Ropen
+            // Calculate tentative slippage from Exit order level.
+            SlipPaidOut := SlippageType2 ? math.round_to_mintick(ExitOrder * SlippageType2OutPct / 100) : SlippageType3 ? math.round_to_mintick(SlippageType3OutVal * syminfo.mintick) : 0.0
+            // Calculate Exit Fill including slipppage, protecting against negative values.
+            ExitFill := math.max(0.0, ExitOrder + (InLong[1] ? -SlipPaidOut : SlipPaidOut))
+            // Fill cannot be outside hi/lo.
+            ExitFill := InLong[1] ? math.max(Rlow, ExitFill) : math.min(Rhigh, ExitFill)
+            // Calculate slippage that actually occured.
+            SlipPaidOut := math.abs(ExitFill - ExitOrder)
+            // Net P&L including slippage and fees.
+            // TradePLX := (ExitFill-EntryFill)*(InLong[1]?1:-1)/entryStopGap
+            TradePLX := (ExitFill - EntryFill) * (InLong[1] ? 1 : -1)
+
+            // Highest/LOwest PL (mult of X) reached during trade.
+            // TradePLXMax := max(TradePLX, TradePLXMax[1])
+            // TradePLXMin := min(TradePLX, TradePLXMin[1])
+            // Trade P&L in %.
+            // TradePLPct := TradePLX*EntryXPct
+
+
+            // Trade P&L in equity units.
+            // TradePLEqu := PositionIn*TradePLX*EntryXPct
+            TradePLEqu := PositionIn * TradePLX / EntryFill
+
+
+            // Add initial position size to P&L to get exit position before fees.
+            PositionOut := TradePLEqu + PositionIn
+
+            // Convert slippage into equity units.
+            SlippageEqu := SlipPaidIn / EntryOrder * PositionIn + SlipPaidOut / ExitOrder * PositionOut
+            // Calculate a pseudo equity value given current trade result.
+            InTradeEquity := InTradeStartEquity + PositionOut - PositionIn
+
+            // ————— Process active pyramided entries info.
+            if PyrEntries > 0
+                // ————— Update active pyramided entries informations.
+                // Add 1 in length for each pyr entry, but don't add if pyr entry made on this bar, as total already updated.
+                PyrTradeLengthsTot := PyrTradeLengthsTot + (PyramidEntry1stBar ? 0 : PyrEntries)
+                PyrTradeLengthsAvg := PyrTradeLengthsTot / PyrEntries
+                // Update following numbers for display purposes only, without worrying about fees.
+                PyrPositionOut := PyrPositionInQtyTot * ExitFill / _initialCapital
+                PyrTradePLEqu := (PyrPositionOut - PyrPositionInTot) * (InLong[1] ? 1 : -1)
+                PyrTradePLPct := PyrTradePLEqu / PyrPositionInTot
+                PyrTradePLX := PyrTradePLPct / PyrEntryXPctAvg
+                PyrTradePLX
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ———————————————————————————————————————— 7. Pyramiding Rules ———————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // Here we evaluate the rules determining if pyramiding is allowed.
+    // ————— Pyramiding 1: Once after X multiple.
+    Pyramiding1Long = PyramidingType1 and Rclose > LastEntryPrice + entryStopGap * Pyramiding1MultX
+    Pyramiding1Short = PyramidingType1 and Rclose < LastEntryPrice - entryStopGap * Pyramiding1MultX
+    // ————— Pyramiding 2: Every % increment.
+    Pyramiding2Long = PyramidingType2 and Rclose > LastEntryPrice * (1 + Pyramiding2Pct / 100)
+    Pyramiding2Short = PyramidingType2 and Rclose < LastEntryPrice * (1 - Pyramiding2Pct / 100)
+    // ————— Pyramiding 3: Every price increment.
+    Pyramiding3Long = PyramidingType3 and Rclose > LastEntryPrice + Pyramiding3Val
+    Pyramiding3Short = PyramidingType3 and Rclose < LastEntryPrice - Pyramiding3Val
+    // ————— Pyramiding 4: Entry number=previous entry number.
+    Pyramiding4Long = PyramidingType4 and EntryNumber == LastEntryNumber
+    Pyramiding4Short = Pyramiding4Long
+    // ————— Pyramiding 5: Entry number<>previous entry number.
+    Pyramiding5Long = PyramidingType5 and EntryNumber != LastEntryNumber
+    Pyramiding5Short = Pyramiding5Long
+    // ————— Pyramiding 6: All opportunities.
+    Pyramiding6Long = PyramidingType6
+    Pyramiding6Short = PyramidingType6
+
+    // ———————————————————— Assemble Pyramiding rules.
+    // In addition to the above rules allowing a pyramided entry, we need to be in a trade and the number of max pyramided entries must not have been reached.
+    PyramidLongOK = InLong[1] and InLong and PyrEntries < PyramidingMaxCnt and (PyramidingFilterNeeded ? FilterLongOK : true) and (Pyramiding1Long or Pyramiding2Long or Pyramiding3Long or Pyramiding4Long or Pyramiding5Long or Pyramiding6Long)
+    PyramidShortOK = InShort[1] and InShort and PyrEntries < PyramidingMaxCnt and (PyramidingFilterNeeded ? FilterShortOK : true) and (Pyramiding1Short or Pyramiding2Short or Pyramiding3Short or Pyramiding4Short or Pyramiding5Short or Pyramiding6Short)
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ——————————————————————————————————————————— 8. In-trade stops ——————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // We work in 2 steps: first we calculate the stop for each strat,
+    // then we evaluate the kick in conditions that will determine if the stop we have calculated will be used.
+    // In all cases a new stop will only replace a previous one if it closer to price, so this logic does not
+    // currently allow implementing stop strats where the stop moves against price. They won't cause errors; the
+    // stop will just never go further away from price than the previous one.
+
+    // ———————————————————— In-trade stops
+    // ————— In-Trade Stop 1: Trailing stop using multiple of X% as max deviation
+    InTradeStop1Long = MaxReached - entryStopGap * InTradeStopType1Mult
+    InTradeStop1Short = MaxReached + entryStopGap * InTradeStopType1Mult
+    // ————— In-Trade Stop 2: Trailing stop using fixed percentage as max deviation
+    InTradeStop2Long = MaxReached * (1 - InTradeStopType2Pct / 100)
+    InTradeStop2Short = MaxReached * (1 + InTradeStopType2Pct / 100)
+    // ————— In-Trade Stop 3: Trailing stop using fixed value as max deviation
+    InTradeStop3Long = MaxReached - InTradeStopType3Val
+    InTradeStop3Short = MaxReached + InTradeStopType3Val
+
+    // ————— In-Trade Stop 4: Move to Break Even. 
+    InTradeStop4Long = EntryFill
+    InTradeStop4Short = EntryFill
+
+
+    // ————— In-Trade Stop 5: ATR stop
+    // Calculated using average of 2 preceeding MinOC/MaxOC and ATR gap.
+    InTradeStop5Atr = InTradeStopType5 ? ta.atr(InTradeStopType567Len) : na
+    InTradeStop5Long = InTradeStopType5 ? math.avg(MinOC[1], MinOC[2]) - InTradeStop5Atr * InTradeStopType567Mult : na
+    InTradeStop5Short = InTradeStopType5 ? math.avg(MaxOC[1], MaxOC[2]) + InTradeStop5Atr * InTradeStopType567Mult : na
+
+    // ————— In-Trade Stop 8: Last Lo/Hi
+    InTradeStop8Long = low[1]
+    InTradeStop8Short = high[1]
+
+    // ————— Select potential new stop.
+    InTradeStopLong_ = 0.0
+    InTradeStopShort_ = 0.0
+    InTradeStopLong_ := InTradeStopType1 ? InTradeStop1Long : InTradeStopType2 ? InTradeStop2Long : InTradeStopType3 ? InTradeStop3Long : InTradeStopType4 ? InTradeStop4Long : InTradeStopType5 ? InTradeStop5Long : InTradeStopType8 ? InTradeStop8Long : 0.0
+    InTradeStopShort_ := InTradeStopType1 ? InTradeStop1Short : InTradeStopType2 ? InTradeStop2Short : InTradeStopType3 ? InTradeStop3Short : InTradeStopType4 ? InTradeStop4Short : InTradeStopType5 ? InTradeStop5Short : InTradeStopType8 ? InTradeStop8Short : 0.0
+
+    // Make sure stop is not on wrong side of the trade.
+    InTradeStopLong_ := InLong[1] and InTradeStopLong_ > Rhigh ? nz(InTradeStop[1]) : math.round_to_mintick(InTradeStopLong_)
+    InTradeStopShort_ := InShort[1] and InTradeStopShort_ < Rlow ? nz(InTradeStop[1]) : math.round_to_mintick(InTradeStopShort_)
+
+
+    // —————————— Kick In Conditions
+    PreviousStop = nz(InTradeStop[1])
+
+    // Determine if we can move stop or leave the entry stop behind and start using the in-trade stop.
+    // ————— Kisk In 1: When the stop passes the entry stop.
+    InTradeKick1Long = InTradeStopLong_ > EntryStop
+    InTradeKick1Short = InTradeStopShort_ < EntryStop
+
+    // ————— Kisk In 2: When the stop passes Entry +/- X Multiple.
+    InTradeKick2Long_ = EntryFill + entryStopGap * InTradeKickType2Mult
+    InTradeKick2Short_ = EntryFill - entryStopGap * InTradeKickType2Mult
+    InTradeKick2Long = InTradeStopLong_ > math.max(math.round_to_mintick(InTradeKick2Long_), EntryStop)
+    InTradeKick2Short = InTradeStopShort_ < math.min(math.round_to_mintick(InTradeKick2Short_), EntryStop)
+
+    // ————— Kisk In 3: When the stop passes Entry +/- %.
+    InTradeKick3Long_ = EntryFill * (1.0 + InTradeKickType3Pct / 100)
+    InTradeKick3Short_ = EntryFill * (1.0 - InTradeKickType3Pct / 100)
+    InTradeKick3Long = InTradeStopLong_ > math.max(math.round_to_mintick(InTradeKick3Long_), EntryStop)
+    InTradeKick3Short = InTradeStopShort_ < math.min(math.round_to_mintick(InTradeKick3Short_), EntryStop)
+
+    // ————— Kisk In 4: When the stop passes Entry +/- Value.
+    InTradeKick4Long_ = EntryFill + InTradeKickType4Val
+    InTradeKick4Short_ = EntryFill - InTradeKickType4Val
+    InTradeKick4Long = InTradeStopLong_ > math.max(math.round_to_mintick(InTradeKick4Long_), EntryStop)
+    InTradeKick4Short = InTradeStopShort_ < math.min(math.round_to_mintick(InTradeKick4Short_), EntryStop)
+
+    // ————— Kisk In 5: When the price passes Entry +/- %
+    InTradeKick5Long_ = EntryFill + InTradeKickType5Pct * EntryFill
+    InTradeKick5Short_ = EntryFill - InTradeKickType5Pct * EntryFill
+    InTradeKick5Long = MaxReached > math.max(math.round_to_mintick(InTradeKick5Long_), EntryStop)
+    InTradeKick5Short = MaxReached < math.min(math.round_to_mintick(InTradeKick5Short_), EntryStop)
+
+
+    // ————— Select Kick In
+    InTradeKickLong = InTradeKickType1 ? InTradeKick1Long : InTradeKickType2 ? InTradeKick2Long : InTradeKickType3 ? InTradeKick3Long : InTradeKickType4 ? InTradeKick4Long : InTradeKickType5 ? InTradeKick5Long : false
+    InTradeKickShort = InTradeKickType1 ? InTradeKick1Short : InTradeKickType2 ? InTradeKick2Short : InTradeKickType3 ? InTradeKick3Short : InTradeKickType4 ? InTradeKick4Short : InTradeKickType5 ? InTradeKick5Short : false
+
+    // ———————————————————— Assemble In-Trade stop.
+    // Our potential new stop value is determined. Only use it as new one if it moved in trade direction compared to previous one.
+    // ————— Set In-trade stop for check on next bar.
+    // Exceptionally, on entry bar of a trade, init to EntryStop.
+    InTradeStop_ = FirstEntry1stBar ? EntryStop : InLong ? InTradeKickLong ? math.max(InTradeStopLong_, nz(InTradeStop[1])) : nz(InTradeStop[1]) : InTradeKickShort ? math.min(InTradeStopShort_, nz(InTradeStop[1])) : nz(InTradeStop[1])
+    InTradeStop := math.max(0.0, InTradeStop_)
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ———————————————————————————————————————————————— 9. Exits ——————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    //
+
+    // ----- Exit 0: Opposite Signal
+    Exit0Long   = ExitType0 and EntryNumber < 0
+    Exit0Short  = ExitType0 and EntryNumber > 0
+
+
+    // Exit 1: SROC Falling / Rising X 
+    sroc        = ta.ema(f_roc(), Exit1Smoothing)
+    srocFalling = ta.falling(sroc, Exit1Fall)
+    srocRising  = ta.rising(sroc, Exit1Rise)
+    Exit1Long   = ExitType1 and srocRising[1] and not srocRising
+    Exit1Short  = ExitType1 and srocFalling[1] and not srocFalling
+
+
+    // ————— Exit 4: RSI Crosses
+    Exit4Rsi    = ta.rsi(close, ExitType4Len)
+    Exit4Long   = ExitType4 and ta.crossunder(Exit4Rsi, ExitType4LongLvl)
+    Exit4Short  = ExitType4 and ta.crossover(Exit4Rsi, ExitType4ShortLvl)
+
+    // ————— Exit 6: When the stop passes Entry +/- X Multiple.
+    Exit6Long_           = EntryFill + entryStopGap * ExitType6Mult
+    Exit6Short_          = EntryFill - entryStopGap * ExitType6Mult
+    Exit6TakeProfitLevel = InLong ? math.round_to_mintick(Exit6Long_) : InShort ? math.round_to_mintick(Exit6Short_) : 0.0
+    Exit6Long            = ExitType6 and math.round_to_mintick(close) > Exit6TakeProfitLevel
+    Exit6Short           = ExitType6 and math.round_to_mintick(close) < Exit6TakeProfitLevel
+
+    // ————— Exit 7: When % gain is x amount (change)
+    Exit7Long_           = EntryFill + ExitType7Pct * EntryFill
+    Exit7Short_          = EntryFill - ExitType7Pct * EntryFill
+    Exit7TakeProfitLevel = InLong ? math.round_to_mintick(Exit7Long_) : InShort ? math.round_to_mintick(Exit7Short_) : 0.0
+    Exit7Long            = ExitType7 and math.round_to_mintick(close) > Exit7TakeProfitLevel  // Use close here because hard exits are calculated on close.
+    Exit7Short           = ExitType7 and math.round_to_mintick(close) < Exit7TakeProfitLevel  // So it's really a true TP Level.
+
+    // ————— Exit 8: When % gain is x amount (equity)
+    Exit8LongShort = ExitType8 and InTradeEquity >= Equity + Equity * ExitType8Pct
+
+
+    // ———————————————————— Assemble exits
+    ExitLong  = Exit0Long  or Exit1Long  or Exit4Long  or Exit6Long  or Exit7Long  or Exit8LongShort
+    ExitShort = Exit0Short or Exit1Short or Exit4Short or Exit6Short or Exit7Short or Exit8LongShort
+
+    // ———————————————————— Assemble reversals
+    reverse0Exit = i_rvrsePositionExit0 and ExitType0
+    reverse4Exit = i_rvrsePositionExit4 and ExitType4
+
+    reversePosition = reverse0Exit or reverse4Exit
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ——————————————————————————————————————— 10. Trade Entry/Exit Trigger Detection —————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    //  Detect Exit and then Entry trigger conditions for execution on next bar.
+
+    // We start with exit triggers because if one is generated, we don't want to enter on the same bar.
+    // ————— Exit triggers
+    // Make an exception on Entry bar; since no previous trade stop existed, test current one.
+    StoppedCondition := not InTradeStopDisabled and (InLong and Rlow < InTradeStop[LongEntryTrigger[1] ? 0 : 1] or InShort and Rhigh > InTradeStop[ShortEntryTrigger[1] ? 0 : 1]) or InLong and Rlow <= EntryStop or InShort and Rhigh >= EntryStop
+    ExitTradeCondition = InLong and ExitLong or InShort and ExitShort
+    ExitCondition := StoppedCondition or ExitTradeCondition
+    LongExitTrigger = InLong and ExitCondition
+    ShortExitTrigger = InShort and ExitCondition
+
+
+    // ————— Entry triggers
+    // If a signal has triggered, this is its number (+ for long, - for short)
+    LongEntry = EntryNumber > 0
+    ShortEntry = EntryNumber < 0
+    // Identify Pyramiding entries so they can be treated distincly.
+    PyramidLongEntry = LongEntry and PyramidLongOK and not ExitCondition
+    PyramidShortEntry = ShortEntry and PyramidShortOK and not ExitCondition
+    // Confirm entries with filter and pyramiding.
+    LongEntryConfirmed = LongEntry and FilterLongOK and not InTrade or PyramidLongEntry and PyramidingOn
+    ShortEntryConfirmed = not LongEntryConfirmed and (ShortEntry and FilterShortOK and not InTrade or PyramidShortEntry and PyramidingOn)
+    // Determine if final conditions allow an entry trigger. The actual entry happens at the next bar.
+    // True only during the bar where an entry triggers.
+    // The 6 conditions are:
+    //      1. Trade direction allowed,
+    //      2. Confirmed signal,
+    //      3. Date filtering allows trade,
+    //      4. Enough bars have elapsed from beginning of dataset to have an ATR for entry stop,
+    //      5. Ruin has not occurred,
+    //      6. Circuit Breaker has not Triggered,
+    LongEntryTrigger := GenerateLongs and LongEntryConfirmed and TradeDateIsAllowed() and bar_index > EntryStopType2Len and not Ruin and not CircuitBreaker
+    ShortEntryTrigger := GenerateShorts and ShortEntryConfirmed and TradeDateIsAllowed() and bar_index > EntryStopType2Len and not Ruin and not CircuitBreaker
+
+
+    // ————— Assembly of states for ease in logical testing.
+    EntryTrigger := LongEntryTrigger or ShortEntryTrigger
+    ExitTrigger := LongExitTrigger or ShortExitTrigger and TradeDateIsAllowed()
+    PyramidEntry := PyramidLongEntry or PyramidShortEntry and TradeDateIsAllowed()
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ————————————————————————————————————————— 11. Trade Exit Processing ————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // On exit, all currently open positions (1st entry + pyramiding) are closed.
+    // Some of the currently valid trade data is needed in further modules,
+    // so we don't reset everything just yet. We will finish cleanup in next to last module before leaving the current bar.
+    if ExitTrigger[1]
+        // ——————————————— Trade state and numbers.
+        // As for entry, everything starts from the open of the bar following trigger, unless we were stopped out
+        ExitOrder := StoppedCondition[1] ? InTradeStop[1] : Ropen
+        // Calculate tentative slippage from Exit order level.
+        SlipPaidOut := SlippageType2 ? math.round_to_mintick(ExitOrder * SlippageType2OutPct / 100) : SlippageType3 ? math.round_to_mintick(SlippageType3OutVal * syminfo.mintick) : 0.0
+        // Calculate Exit Fill including slipppage, protecting against negative values.
+        ExitFill := math.max(0.0, ExitOrder + (InLong[1] ? -SlipPaidOut : SlipPaidOut))
+        // Fill cannot be outside hi/lo.
+        ExitFill := InLong[1] ? math.max(Rlow[StoppedCondition[1] ? 1 : 0], ExitFill) : math.min(Rhigh[StoppedCondition[1] ? 1 : 0], ExitFill)
+        // Calculate slippage that actually occured (because it can be limited by bar's hi/lo).
+        SlipPaidOut := math.abs(ExitFill - ExitOrder)
+        // Net P&L after slippage.
+        // TradePLX := (ExitFill-EntryFill)*(InLong[1]?1:-1)/entryStopGap
+        TradePLX := (ExitFill - EntryFill) * (InLong[1] ? 1 : -1)
+
+        // Highest/Lowest PL (mult of X) reached during trade.
+        // TradePLXMax := max(TradePLX, TradePLXMax[1])
+        // TradePLXMin := min(TradePLX, TradePLXMin[1])
+        // Trade P&L in %.
+        // TradePLPct := TradePLX*EntryXPct
+        // Trade P&L in equity units.
+        // TradePLEqu := PositionIn*TradePLX*EntryXPct
+        TradePLEqu := PositionIn * TradePLX / EntryFill
+
+        // Add initial position size to P&L to get exit position before fees.
+        PositionOut := TradePLEqu + PositionIn
+        // % fees are calculated on exit's position size, so taking into account P&L after slippage.
+        FeesPaidOut := math.abs(FeesType2 ? PositionOut * FeesType2OutPct / 100 : 0.0)
+        // ————— From here we can integrate the impact of fees in our calcs.
+        // Subtract fees from previously calculated P&L (equ).
+        TradePLEqu := TradePLEqu - FeesPaidIn - FeesPaidOut
+
+        // Recalculate PLX taking fees into account.
+        // TradePLX := TradePLEqu/EntryXEqu
+        // label.new(bar_index, high, text=tostring(TradePLX))
+        TradePLX := TradePLEqu * EntryFill / PositionIn
+        // label.new(bar_index, low, text=tostring(TradePLX))
+
+        // Recalculate PL% taking fees into account.
+        // TradePLPct := TradePLX*EntryXPct
+        // Convert slippage in equ.
+        SlippageEqu := SlipPaidIn / EntryOrder * PositionIn + SlipPaidOut / ExitOrder * PositionOut
+        // Max Drawdown (from high to low) during trade.
+        TradeMaxDrawdown := math.min(0.0, (MaxReached[1] - MinReached[1]) * (InLong[1] ? -1 : 1) / MaxReached[1])
+
+        // ——————————————— Global 1st entry trade info.
+        First_Entries := First_Entries + 1
+        // Win/Lose state.
+        WinningTrade = TradePLX >= 0.0
+        LosingTrade = not WinningTrade
+        // P&L average=Expectancy=APPT in X.
+        First_PLXTot := First_PLXTot + TradePLX
+        First_PLXAvg := First_PLXTot / First_Entries
+        // X values: update avgs.
+        First_XTot := First_XTot + entryStopGap
+        First_XAvg := First_XTot / First_Entries
+        First_XPctTot := First_XPctTot + EntryXPct
+        First_XPctAvg := First_XPctTot / First_Entries
+        First_XEquTot := First_XEquTot + PositionIn * EntryXPct
+        First_XEquAvg := First_XEquTot / First_Entries
+        // Winning/Losing trade total X.
+        // First_WinsX := First_WinsX + (WinningTrade? TradePLX:0.0)
+        // First_LoseX := First_LoseX + (LosingTrade? TradePLX:0.0)
+        First_WinsEqu := First_WinsEqu + (WinningTrade ? PositionOut - PositionIn : 0.0)
+        First_LoseEqu := First_LoseEqu + (LosingTrade ? PositionOut - PositionIn : 0.0)
+        // label.new(bar_index, high, text=tostring(First_WinsX/_initialCapital))
+        // label.new(bar_index, low, text=tostring(First_WinsEqu))
+        // Winning/Losing trade totals.
+        First_Winning := First_Winning + OneZero(WinningTrade)
+        First_Losing := First_Losing + OneZero(LosingTrade)
+        // Other global trade data.
+        First_TradeLengthsTot := First_TradeLengthsTot + TradeLength
+        First_TradeLengthsAvg := First_TradeLengthsTot / First_Entries
+        First_WinsTL := First_WinsTL + (WinningTrade ? TradeLength : 0)
+        First_LoseTL := First_LoseTL + (LosingTrade ? TradeLength : 0)
+        // Entry slippage and fees were added on entry; only add exit ones here.
+        First_FeesEqu := First_FeesEqu + FeesPaidIn + FeesPaidOut
+        First_SlipEqu := First_SlipEqu + SlippageEqu
+        First_PositionInTot := First_PositionInTot + PositionIn
+        First_VolumeTraded := First_VolumeTraded + PositionIn + PositionOut
+        // Profit factor: gross wins / gross losses
+        First_ProfitFactor := First_LoseEqu == 0.0 ? 0.0 : math.abs(nz(First_WinsEqu / First_LoseEqu))
+
+        // If we have active pyramid entries, process them. 
+        if PyrEntries > 0
+            // For Pyramided positions, instead of starting from the usual TradePLX, we will be working from the total of number
+            // of assets bought/sold at each successive entry, then calculating the delta between the currency value of the entries
+            // and the exit. PLX and PLPct will then be derived from there.
+
+            // Exit position before fees.
+            PyrPositionOut := PyrPositionInQtyTot * ExitFill / _initialCapital
+            // Exit fees.
+            PyrFeesPaidOut := math.abs(FeesType2 ? PyrPositionOut * FeesType2OutPct / 100 : 0.0)
+            // Add exit fees to in fees (equ).
+            PyrFeesEquTot := PyrFeesEquTot + PyrFeesPaidOut
+            // Add slippage out (equ) (slippage is already in PyrSlipEquTot).
+            PyrSlipEquTot := PyrSlipEquTot + SlipPaidOut / ExitOrder * PyrPositionOut
+            // PL (equ) including Fees & Slippage.
+            PyrTradePLEqu := (PyrPositionOut - PyrPositionInTot) * (InLong[1] ? 1 : -1) - PyrFeesEquTot
+            // ————— From here we can integrate the impact of fees in PL.
+            // PL% taking fees into account.
+            PyrTradePLPct := PyrTradePLEqu / PyrPositionInTot
+            // PLX taking fees into account.
+            PyrTradePLX := PyrTradePLPct / PyrEntryXPctAvg
+
+            // ——————————————— Global trade info.
+            // Total count of pyr entries (kept separate from First_Entries count).
+            Pyr_Entries := Pyr_Entries + PyrEntries
+            // Win/Lose state.
+            PyrWinningTrade = PyrTradePLX >= 0.0
+            PyrLosingTrade = not PyrWinningTrade
+            // Winning/Losing trade total (equ).
+            Pyr_WinsEqu := Pyr_WinsEqu + (PyrWinningTrade ? PyrTradePLEqu : 0.0)
+            Pyr_LoseEqu := Pyr_LoseEqu + (PyrLosingTrade ? PyrTradePLEqu : 0.0)
+            // Winning/Losing trade totals.
+            Pyr_Winning := Pyr_Winning + OneZero(PyrWinningTrade) * PyrEntries
+            Pyr_Losing := Pyr_Losing + OneZero(PyrLosingTrade) * PyrEntries
+            // P&L average per pyr entry.
+            Pyr_PLXTot := Pyr_PLXTot + PyrTradePLX * PyrEntries
+            Pyr_PLXAvg := Pyr_PLXTot / Pyr_Entries
+            // Other global trade data.
+            // Total volume traded.
+            Pyr_VolumeTraded := Pyr_VolumeTraded + PyrPositionOut + PyrPositionInTot
+            // Pyr Profit factor.
+            Pyr_ProfitFactor := Pyr_LoseEqu == 0.0 ? 0.0 : math.abs(nz(Pyr_WinsEqu / Pyr_LoseEqu))
+            Pyr_ProfitFactor
+
+        // ——————————————— Global combined (1st entries and pyramiding) numbers.
+        All_Entries := All_Entries + 1 + PyrEntries
+        // Win/Lose state.
+        WinningTrade := (TradePLX + PyrTradePLX * PyrEntries) / (PyrEntries + 1) >= 0.0
+        LosingTrade := not WinningTrade
+        // P&L average=Expectancy=APPT in X.
+        All_PLXTot := All_PLXTot + TradePLX + PyrTradePLX * PyrEntries
+        All_PLXAvg := All_PLXTot / All_Entries
+        // X values: update avgs.
+        All_XTot := All_XTot + entryStopGap + PyrEntryXAvg * PyrEntries
+        All_XAvg := All_XTot / All_Entries
+        All_XPctTot := All_XPctTot + EntryXPct + PyrEntryXPctAvg * PyrEntries
+        All_XPctAvg := All_XPctTot / All_Entries
+        All_XEquTot := All_XEquTot + PositionIn * EntryXPct + PyrPositionInTot * PyrEntryXPctAvg
+        All_XEquAvg := All_XEquTot / All_Entries
+        // Winning/Losing trade total X.
+        All_WinsX := All_WinsX + (WinningTrade ? TradePLX + PyrTradePLX * PyrEntries : 0.0)
+        All_LoseX := All_LoseX + (LosingTrade ? TradePLX + PyrTradePLX * PyrEntries : 0.0)
+
+        All_WinsEqu := All_WinsEqu + (WinningTrade ? PositionOut - PositionIn + PyrTradePLEqu : 0.0)
+        All_LoseEqu := All_LoseEqu + (LosingTrade ? PositionOut - PositionIn + PyrTradePLEqu : 0.0)
+        // Winning/Losing trade totals.
+        All_Winning := All_Winning + OneZero(WinningTrade) + OneZero(WinningTrade) * PyrEntries
+        All_Losing := All_Losing + OneZero(LosingTrade) + OneZero(LosingTrade) * PyrEntries
+        // Other global trade data.
+        All_TradeLengthsTot := All_TradeLengthsTot + TradeLength + PyrTradeLengthsAvg * PyrEntries
+        All_TradeLengthsAvg := All_TradeLengthsTot / All_Entries
+        All_WinsTL := All_WinsTL + (WinningTrade ? TradeLength + PyrTradeLengthsAvg * PyrEntries : 0)
+        All_LoseTL := All_LoseTL + (LosingTrade ? TradeLength + PyrTradeLengthsAvg * PyrEntries : 0)
+        // Entry slippage and fees were added on entry; only add exit ones here.
+        All_FeesEqu := All_FeesEqu + FeesPaidIn + FeesPaidOut + PyrFeesEquTot
+        All_SlipEqu := All_SlipEqu + SlippageEqu + PyrSlipEquTot
+        All_PositionInTot := All_PositionInTot + PositionIn + PyrPositionInTot
+        All_VolumeTraded := All_VolumeTraded + PositionIn + PositionOut + PyrPositionOut + PyrPositionInTot
+        // Profit factor: gross wins / gross losses
+        All_ProfitFactor := All_LoseEqu == 0.0 ? 0.0 : math.abs(nz(All_WinsEqu / All_LoseEqu))
+
+        // ——————————————— Equity update.
+        // First entry and pyramiding (if any) exited; finish up a few numbers.
+        // Equity update with PL only (PositionIn never left equity) and subtracting fees.
+        Equity := Equity + PositionOut - PositionIn - FeesPaidIn - FeesPaidOut + PyrTradePLEqu
+        // Return on Capital.
+        ReturnOnEquity := Equity - 1.0
+        // Detect if capital is depleted. If so, new trades will no longer be opened.
+        Ruin := Equity <= 0
+        // Last update of in-trade equity before next trade.
+        InTradeEquity := Equity
+        InTradeEquity
+
+
+
+
+    //{ this only reverses positions on exits.
+    if ExitTrigger[1] and not StoppedCondition[1] and reversePosition and TradeDateIsAllowed()
+        LongEntryTrigger := not InLong[1]
+        ShortEntryTrigger := InLong[1]
+        EntryTrigger := true
+        EntryTrigger
+    //}
+
+
+    // ———————————————————— A.1. Global numbers
+
+    // ————— A.1.1 Global combined (1st entries + pyramiding)
+    // APPTCur11 = nz((First_Winning/First_Entries*First_WinsEqu*_initialCapital/First_Winning)-(-First_Losing/First_Entries*First_LoseEqu*_initialCapital/First_Losing))
+    EquityCu = Equity * _initialCapital  //                                             "ALL: Equity (curr)", "", color=AAA)                                    // ————— Show
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ———————————————————————————————————————————— 16. Variable resets ———————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // ———————————————————— Last cleanup of exits.
+    // Now that we have used and plotted all Exit information, we can do final cleanup before next bar.
+    // Some of these values are reset a second time at the beginning of cycles;
+    // they are nonetheless reset here for cleaner between trade display purposes.
+    if ExitTrigger[1]
+        EntryFill := 0.0
+        EntryOrder := 0.0
+        entryStopGap := 0.0
+        EntryXPct := 0.0
+        EntryXEqu := 0.0
+        ExitOrder := 0.0
+        ExitFill := 0.0
+        FeesPaidIn := 0.0
+        FeesPaidOut := 0.0
+        InTradeEquity := Equity
+        InTradeStartEquity := Equity
+        LastEntryPrice := 0
+        PositionIn := 0.0
+        PositionOut := 0.0
+        SlippageEqu := 0.0
+        SlipPaidIn := 0.0
+        SlipPaidOut := 0.0
+        TakeProfitLevel := 0.0
+        TradeLength := 0
+        TradeMaxDrawdown := 0.0
+
+        PyrEntries := 0
+        PyrEntryBarTot := 0
+        PyrEntryBarAvg := 0.0
+        PyrEntryFill := 0.0
+        PyrEntryFillTot := 0.0
+        PyrEntryFillAvg := 0.0
+        PyrEntryOrder := 0.0
+        PyrEntryX := 0.0
+        PyrEntryXAvg := 0.0
+        PyrEntryXPct := 0.0
+        PyrEntryXPctTot := 0.0
+        PyrEntryXPctAvg := 0.0
+        PyrEntryXTot := 0.0
+        PyrFeesPaidIn := 0.0
+        PyrFeesPaidOut := 0.0
+        PyrFeesEquTot := 0.0
+        PyrPositionIn := 0.0
+        PyrPositionOut := 0.0
+        PyrPositionInQtyTot := 0.0
+        PyrPositionInTot := 0.0
+        PyrSlipPaidIn := 0.0
+        PyrSlipPaidOut := 0.0
+        PyrSlipEquTot := 0.0
+        PyrTradePLEqu := 0.0
+        PyrTradePLX := 0.0
+        PyrTradeLengthsTot := 0
+        PyrTradeLengthsAvg := 0.0
+        PyrTradeLengthsAvg
+
+
+
+
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    // —————————————————————————————————————————— 17. Strategy() calls ————————————————————————————————————————————————————————
+    // ————————————————————————————————————————————————————————————————————————————————————————————————————————————————————————
+    int _signal = LongEntryTrigger ? 1 : ShortEntryTrigger ? -1 : LongExitTrigger ? 2 : ShortExitTrigger ? -2 : na
+
+
+    // Calculate Drawdown Metrics
+    [MaxDDPct, MaxDDPT, MaxDDDur] = f_getMaxDD(InTradeEquity, _initialCapital)
+    CircuitBreaker := -MaxDDPct >= i_RiskMaxDrawdownCB  // Stops trades
+
+    // Total Net Profit - Shows profitability and ROI
+    NetProfit = EquityCu - _initialCapital
+
+    ROI = ReturnOnEquity * 100
+
+    // Number of Trades - Shows # of trades taken during backtesting period
+    Trades = All_Winning + All_Losing
+
+    // Number of Bars - Shows avg # of days in a trade
+    ATLen = f_barsToDays(All_TradeLengthsAvg)
+
+    // Maximum Loss - Shows largest loss experienced on a per-trade basis. Normally, don’t want to exceed more than 1-2 % of equity. 
+    var float MaxLoss = 0.0
+    MaxLoss := math.min(nz((Equity - Equity[1]) * _initialCapital, 0.0), MaxLoss)
+
+    // Maximum Consecutive Losses (MCL) - The max consecutive losses endured throughout the backtesting period. Another important metric for trader psychology, this will help you understand how many losses you should be prepared to handle in order to achieve netprofit.
+    MaxConsecutiveLosses = f_getMCL(Equity, Trades, All_Losing)
+
+    // Profit to Maximum Drawdown (P:MD) - A ratio for the Net Profit to the maximum drawdown. The higher the ratio is, the better. Large profits and small losses contribute to a good PMD This metric allows us to examine the profit with respect to risk.
+    PMD = NetProfit / math.abs(MaxDDPT)
+
+    // Average Winning Trade, and Average Losing Trade = P&L total (equ) of all winning/losing trades / # Of winning/losing trades respectively.
+    All_AvgWin := All_WinsEqu / All_Winning
+    All_AvgLos := All_LoseEqu / All_Losing
+
+    // Profit Loss Ratio (P:L) - Average profit over the average loss. Typically this number should be higher in trend following systems. Mean revision systems show lower values, but compensate with better win %
+    PLR = math.abs(All_AvgWin / All_AvgLos)
+
+    // Percent Winners (% W) - The percentage of winning trades. Trend systems will usually have lower win percentages, since statistically the market is only trending 30% of the time. Mean reversions systems typically should have a high % W.
+    PctWinners = nz(100 * All_Winning / Trades)
+
+    // Time Percentage (Time %) - The amount of time that the system has an open position. The more time you are in the market, the more you are exposed to the market's risk, not to mention you could be using that money for something else right? 
+    TotalTradeTime = ta.cum(TradeDateIsAllowed() ? 1 : 0)
+    tradingTime = ta.cum(TradeDateIsAllowed() and InTrade ? 1 : 0)
+    // TimePct = round(100*(First_TradeLengthsTot+TradeLength) / TotalTradeTime, 2)
+    TimePct = 100 * tradingTime / TotalTradeTime
+
+
+    openProfit = TradePLEqu * _initialCapital  // Unrealized gain/loss
+    _tradingDays = f_barsToDays(TotalTradeTime)  // Days the strategy ran for
+
+
+    [_tradingDays, InTradeEquity, openProfit, NetProfit, ROI, Trades, ATLen, MaxDDPct, MaxDDPT, MaxLoss, MaxDDDur, MaxConsecutiveLosses, PMD, PLR, PctWinners, TimePct, _signal]
+
+
+
+
+// ------ Display and Drawings
+// Table Inputs
+T_P1 = 'Bottom Center'
+T_P2 = 'Bottom Left'
+T_P3 = 'Bottom Right'
+T_P4 = 'Middle Center'
+T_P5 = 'Middle Left'
+T_P6 = 'Middle Right'
+T_P7 = 'Top Center'
+T_P8 = 'Top Left'
+T_P9 = 'Top Right'
+i_t_position = input.string(T_P3, 'Table Position', options=[T_P1, T_P2, T_P3, T_P4, T_P5, T_P6, T_P7, T_P8, T_P9], group='Table')
+t_position = i_t_position == T_P1 ? position.bottom_center : i_t_position == T_P2 ? position.bottom_left : i_t_position == T_P3 ? position.bottom_right : i_t_position == T_P4 ? position.middle_center : i_t_position == T_P5 ? position.middle_left : i_t_position == T_P6 ? position.middle_right : i_t_position == T_P7 ? position.top_center : i_t_position == T_P8 ? position.top_left : i_t_position == T_P9 ? position.top_right : na
+
+i_t_txtSze = input.string(defval='auto', title='Table Size', options=['auto', 'tiny', 'small', 'normal', 'large', 'huge'], group='Table')
+t_headerClr = color.black
+t_neuColor = color.gray
+
+t_rows = 7
+t_columns = 15
+
+var table t_portfolioResults = table.new(t_position, t_columns, t_rows, border_width=3)  // Create Global Table object
+
+
+
+f_getColor(_val, _max, _min) =>
+    // _val: Value to be converted into color
+    // _max: Value that needs to be reached for Max Color
+    // _min: Value that needs to be reached for Min Color
+    //
+    // Returns: series[color]
+    color.from_gradient(_val, _min, _max, color.red, color.green)
+
+
+f_fillCell(_table, _column, _row, _text, _bgcolor) =>
+    // Fill the Table Cell
+    t_txtHA = text.align_center
+    t_txtVA = text.align_center
+    t_txtClr = color.white
+    table.cell(_table, _column, _row, _text, 0, 0, t_txtClr, t_txtHA, t_txtVA, i_t_txtSze, _bgcolor)
+
+
+f_row(_initialCapital, _asset, _row) =>
+    // Draw a Table Row
+    [_tradingDays, InTradeEquity, openProfit, NetProfit, ROI, NumTrades, AvgTradeLen, MaxDDPct, MaxDDPT, MaxLoss, MaxDDDur, MaxConsecutiveLosses, PMD, PLR, PctWinners, TimePct, Signal] = request.security(_asset, timeframe.period, f_getData(_initialCapital))
+    
+    if _asset == syminfo.tickerid
+        if Signal == 1
+            label.new(bar_index, low, "Long Entry", yloc=yloc.belowbar, style=label.style_label_up, color=color.green)
+        else if Signal == 2
+            label.new(bar_index, high, "Long Exit", yloc=yloc.abovebar, style=label.style_label_down, color=color.yellow)
+        else if Signal == -1
+            label.new(bar_index, high, "Short Entry", yloc=yloc.abovebar, style=label.style_label_down, color=color.red)
+        else if Signal == -2
+            label.new(bar_index, low, "Short Exit", yloc=yloc.belowbar, style=label.style_label_up, color=color.yellow)
+
+    // TEST
+    // [_tradingDays, InTradeEquity, openProfit, NetProfit, ROI,NumTrades,AvgTradeLen,MaxDDPct,MaxDDPT,MaxLoss,MaxDDDur,MaxConsecutiveLosses,PMD,PLR,PctWinners,TimePct,Signal] = f_getData(_initialCapital)
+    // TEST END
+
+    // Alerts
+    if MaxDDPct >= i_RiskMaxDrawdown
+        alert(str.format('Max Drawdown Tolerance Exceeded for: {0} at {1, number, percent}', _asset, MaxDDPct / 100), alert.freq_all)
+
+    if barstate.islast
+        f_fillCell(t_portfolioResults, 0, _row, _asset, t_headerClr)
+        f_fillCell(t_portfolioResults, 1, _row, str.tostring(NetProfit, '#.##'), f_getColor(NetProfit, _initialCapital, -_initialCapital))
+        f_fillCell(t_portfolioResults, 2, _row, str.tostring(NumTrades, '#'), f_getColor(NumTrades, 200, 0))
+        f_fillCell(t_portfolioResults, 3, _row, str.tostring(AvgTradeLen, '#.##'), t_neuColor)
+        f_fillCell(t_portfolioResults, 4, _row, str.tostring(MaxDDPT, '#.##'), f_getColor(MaxDDPct, 0, -i_RiskMaxDrawdown))
+        f_fillCell(t_portfolioResults, 5, _row, str.tostring(MaxLoss, '#.##'), f_getColor(MaxLoss, 0, -(InTradeEquity * _initialCapital) * (2.0 / 100)))
+        f_fillCell(t_portfolioResults, 6, _row, str.tostring(MaxDDDur, '#'), t_neuColor)  // TODO: This depends on Timeframe and Time horizon. (pass -MaxDDDur, and adjust length by timeframe.)
+        f_fillCell(t_portfolioResults, 7, _row, str.tostring(MaxConsecutiveLosses, '#'), f_getColor(-MaxConsecutiveLosses, 0, -11))
+        f_fillCell(t_portfolioResults, 8, _row, str.tostring(PMD, '#.##'), f_getColor(PMD, 4, -4))
+        f_fillCell(t_portfolioResults, 9, _row, str.tostring(PLR, '#.##'), f_getColor(PLR, 4, -4))
+        f_fillCell(t_portfolioResults, 10, _row, str.tostring(PctWinners, format.percent), f_getColor(PctWinners, 100, 0))
+        f_fillCell(t_portfolioResults, 11, _row, str.tostring(TimePct, format.percent), f_getColor(-TimePct, 0, -100))
+        f_fillCell(t_portfolioResults, 12, _row, str.tostring(ROI, format.percent), f_getColor(ROI, 100, -100))
+        f_fillCell(t_portfolioResults, 13, _row, str.tostring(openProfit, '#.##'), f_getColor(openProfit, NetProfit / 20, -NetProfit / 20))
+        f_fillCell(t_portfolioResults, 14, _row, str.tostring(_tradingDays, '#.##'), t_neuColor)
+
+    [nz(_tradingDays), nz(InTradeEquity), nz(openProfit), nz(NetProfit), nz(ROI), nz(NumTrades), nz(AvgTradeLen), nz(MaxDDPct), nz(MaxDDPT), nz(MaxLoss), nz(MaxDDDur), nz(MaxConsecutiveLosses), nz(PMD), nz(PLR), nz(PctWinners), nz(TimePct), Signal]
+
+
+
+
+f_table() =>
+    // Draw the Table.
+    _i_sym1 = syminfo.tickerid
+    _i_sym2 = input.symbol(defval='FX_IDC:CADJPY', title='Symbol 2', group='Portfolio Selection')
+    _i_sym3 = input.symbol(defval='FX_IDC:GBPUSD', title='Symbol 3', group='Portfolio Selection')
+    _i_sym4 = input.symbol(defval='TVC:USOIL', title='Symbol 4', group='Portfolio Selection')
+    _i_sym5 = input.symbol(defval='BATS:BAC', title='Symbol 5', group='Portfolio Selection')
+
+    // Draw Headers
+    i_fullText = input.bool(true, 'Show Full Header Text', group='Table')
+    if barstate.islast
+        f_fillCell(t_portfolioResults, 0, 0, 'Portfolio', t_headerClr)
+        f_fillCell(t_portfolioResults, 1, 0, i_fullText ? 'Net\nProfit' : 'NP', t_headerClr)
+        f_fillCell(t_portfolioResults, 2, 0, i_fullText ? '# of\nTrades' : '#T', t_headerClr)
+        f_fillCell(t_portfolioResults, 3, 0, i_fullText ? 'Average\nTrade\nLength' : 'ATL', t_headerClr)
+        f_fillCell(t_portfolioResults, 4, 0, i_fullText ? 'Max\nDrawdown' : 'MD', t_headerClr)
+        f_fillCell(t_portfolioResults, 5, 0, i_fullText ? 'Max\nLoss' : 'ML', t_headerClr)
+        f_fillCell(t_portfolioResults, 6, 0, i_fullText ? 'Max\nDrawdown\nDuration' : 'MDD', t_headerClr)
+        f_fillCell(t_portfolioResults, 7, 0, i_fullText ? 'Max\nConsecutive\nLosing\nTrades' : 'MCL', t_headerClr)
+        f_fillCell(t_portfolioResults, 8, 0, i_fullText ? 'Profit\n—————\nMax\nDrawdown' : 'P:MD', t_headerClr)
+        f_fillCell(t_portfolioResults, 9, 0, i_fullText ? 'Profit\n—————\nLoss' : 'P:L', t_headerClr)
+        f_fillCell(t_portfolioResults, 10, 0, i_fullText ? '%\nWinning\nTrades' : '%W', t_headerClr)
+        f_fillCell(t_portfolioResults, 11, 0, i_fullText ? '%\nTime\nin\nMarket' : '%T', t_headerClr)
+        f_fillCell(t_portfolioResults, 12, 0, i_fullText ? 'Return\nOn\nInvestment' : 'ROI', t_headerClr)
+        f_fillCell(t_portfolioResults, 13, 0, i_fullText ? 'Open\nProfit' : 'OP', t_headerClr)
+        f_fillCell(t_portfolioResults, 14, 0, i_fullText ? 'Trading\nDays' : 'TD', t_headerClr)
+
+
+
+    // Draw Rows
+    numberOfAssetsInPortfolio = 5
+    portfolioAllocation = PosTypeCapital / numberOfAssetsInPortfolio
+    [TradingDays1, ITE1, openProfit1, NetProfit1, ROI1, NumTrades1, AvgTradeLen1, MaxDDPct1, MaxDDPT1, MaxLoss1, MaxDDDur1, MaxConsecutiveLosses1, PMD1, PLR1, PctWinners1, TimePct1, Signal1] = f_row(portfolioAllocation, _i_sym1, 1)
+    [TradingDays2, ITE2, openProfit2, NetProfit2, ROI2, NumTrades2, AvgTradeLen2, MaxDDPct2, MaxDDPT2, MaxLoss2, MaxDDDur2, MaxConsecutiveLosses2, PMD2, PLR2, PctWinners2, TimePct2, Signal2] = f_row(portfolioAllocation, _i_sym2, 2)
+    [TradingDays3, ITE3, openProfit3, NetProfit3, ROI3, NumTrades3, AvgTradeLen3, MaxDDPct3, MaxDDPT3, MaxLoss3, MaxDDDur3, MaxConsecutiveLosses3, PMD3, PLR3, PctWinners3, TimePct3, Signal3] = f_row(portfolioAllocation, _i_sym3, 3)
+    [TradingDays4, ITE4, openProfit4, NetProfit4, ROI4, NumTrades4, AvgTradeLen4, MaxDDPct4, MaxDDPT4, MaxLoss4, MaxDDDur4, MaxConsecutiveLosses4, PMD4, PLR4, PctWinners4, TimePct4, Signal4] = f_row(portfolioAllocation, _i_sym4, 4)
+    [TradingDays5, ITE5, openProfit5, NetProfit5, ROI5, NumTrades5, AvgTradeLen5, MaxDDPct5, MaxDDPT5, MaxLoss5, MaxDDDur5, MaxConsecutiveLosses5, PMD5, PLR5, PctWinners5, TimePct5, Signal5] = f_row(portfolioAllocation, _i_sym5, 5)
+    // [TradingDays6, ITE6, NetProfit6,ROI6,NumTrades6,AvgTradeLen6,MaxDDPct6,MaxDDPT6,MaxLoss6,MaxDDDur6,MaxConsecutiveLosses6,PMD6,PLR6,PctWinners6,TimePct6,Signal6] = f_row("XRPUSD", 7, _i_size,_i_textAlign)
+
+    // Track Totals
+    maxTD = math.max(TradingDays1, TradingDays2, TradingDays3, TradingDays4, TradingDays5)
+    totalITE = math.avg(ITE1, ITE2, ITE3, ITE4, ITE5)
+    totalOP = openProfit1 + openProfit2 + openProfit3 + openProfit4 + openProfit5
+    totalNetProfit = NetProfit1 + NetProfit2 + NetProfit3 + NetProfit4 + NetProfit5
+    totalROI = totalNetProfit / PosTypeCapital * 100
+    totalTrades = NumTrades1 + NumTrades2 + NumTrades3 + NumTrades4 + NumTrades5
+    [totalMaxDDPct, totalMaxDDPT, totalMaxDDDur] = f_getMaxDD(totalITE, PosTypeCapital)
+
+    NetChange = ta.change(totalNetProfit)
+    totalMaxLoss = 0.
+    totalMaxLoss := math.min(NetChange, nz(totalMaxLoss[1]))
+    var totalMCLCount = 0
+    totalMCLCount := NetChange < 0 ? totalMCLCount + 1 : 0
+    var totalMCL = 0
+    totalMCL := math.max(totalMCLCount, totalMCL)
+    totalPMD = totalNetProfit / math.abs(totalMaxDDPT)
+    totalPLR = math.avg(PLR1, PLR2, PLR3, PLR4, PLR5)
+    totalPW = (NumTrades1 * PctWinners1 / 100 + NumTrades2 * PctWinners2 / 100 + NumTrades3 * PctWinners3 / 100 + NumTrades4 * PctWinners4 / 100 + NumTrades5 * PctWinners5 / 100) / totalTrades * 100
+
+    InTrade = TradeDateIsAllowed() and (ta.change(totalITE) ? true : false)
+    TotalTradeBars = ta.cum(TradeDateIsAllowed() ? 1 : 0)
+    TotalInTradeBars = ta.cum(InTrade ? 1 : 0)
+    totalATL = f_barsToDays(TotalInTradeBars / totalTrades)
+    totalTP = TotalInTradeBars / TotalTradeBars * 100
+    totalSignal = Signal1
+
+
+
+
+    _totalRow = numberOfAssetsInPortfolio + 1
+    if barstate.islast
+        // Draw Totals
+        f_fillCell(t_portfolioResults, 0, _totalRow, 'Total', t_headerClr)
+        f_fillCell(t_portfolioResults, 1, _totalRow, str.tostring(totalNetProfit, '#.##'), f_getColor(totalNetProfit, PosTypeCapital, -PosTypeCapital))
+        f_fillCell(t_portfolioResults, 2, _totalRow, str.tostring(totalTrades, '#'), f_getColor(totalTrades, 200, 0))
+        f_fillCell(t_portfolioResults, 3, _totalRow, str.tostring(totalATL, '#.##'), t_neuColor)
+        f_fillCell(t_portfolioResults, 4, _totalRow, str.tostring(totalMaxDDPT, '#.##'), f_getColor(totalMaxDDPT, 0, -totalITE * PosTypeCapital * (i_RiskMaxDrawdown / 100)))
+        f_fillCell(t_portfolioResults, 5, _totalRow, str.tostring(totalMaxLoss, '#.##'), f_getColor(totalMaxLoss, 0, -totalITE * PosTypeCapital * (2.0 / 100)))
+        f_fillCell(t_portfolioResults, 6, _totalRow, str.tostring(totalMaxDDDur, '#'), t_neuColor)
+        f_fillCell(t_portfolioResults, 7, _totalRow, str.tostring(totalMCL, '#'), f_getColor(-totalMCL, 0, -11))
+        f_fillCell(t_portfolioResults, 8, _totalRow, str.tostring(totalPMD, '#.##'), f_getColor(totalPMD, 4, -4))
+        f_fillCell(t_portfolioResults, 9, _totalRow, str.tostring(totalPLR, '#.##'), f_getColor(totalPLR, 4, -4))
+        f_fillCell(t_portfolioResults, 10, _totalRow, str.tostring(totalPW, format.percent), f_getColor(totalPW, 100, 0))
+        f_fillCell(t_portfolioResults, 11, _totalRow, str.tostring(totalTP, format.percent), f_getColor(-totalTP, 0, -100))
+        f_fillCell(t_portfolioResults, 12, _totalRow, str.tostring(totalROI, format.percent), f_getColor(totalROI, 100, -100))
+        f_fillCell(t_portfolioResults, 13, _totalRow, str.tostring(totalOP, '#.##'), f_getColor(totalOP, totalNetProfit / 20, -totalNetProfit / 20))
+        f_fillCell(t_portfolioResults, 14, _totalRow, str.tostring(maxTD, '#.##'), t_neuColor)
+
+f_table()
