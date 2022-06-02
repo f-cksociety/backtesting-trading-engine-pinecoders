@@ -1850,7 +1850,16 @@ A7  = AlertType7    and EventType1Trigger
 A8  = AlertType8    and EventType2Trigger
 A9  = AlertType9    and EventType3Trigger
 A10 = AlertType10   and EventType4Trigger
-alertcondition(A1 or A2 or A3 or A4 or A5 or A6 or A7 or A8 or A9 or A10, title=SystemName, message=TradeId)
+alertcondition(A1, title='Long Entry', message=TradeId)
+alertcondition(A2, title='Pyramid Long Entry', message=TradeId)
+alertcondition(A3, title='Short Entry', message=TradeId)
+alertcondition(A4, title='Pyramid Short Entry', message=TradeId)
+alertcondition(A5, title='Long Exit', message=TradeId)
+alertcondition(A6, title='Short Exit', message=TradeId)
+alertcondition(A7, title='Price nearing stop', message=TradeId)
+alertcondition(A8, title='Possible Top/Bottom', message=TradeId)
+alertcondition(A9, title='Stop Moved', message=TradeId)
+alertcondition(A10, title='Big Price Swing', message=TradeId)
 
 
 
