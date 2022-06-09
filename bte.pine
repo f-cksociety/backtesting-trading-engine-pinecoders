@@ -1652,7 +1652,7 @@ plotchar(All_VolumeTraded*PosTypeCapital,                                   "ALL
 // ————— A.1.3 Global Pyramiding
 // APPTCur13 = nz((Pyr_Winning/Pyr_Entries*Pyr_WinsEqu*PosTypeCapital/Pyr_Winning)-(-Pyr_Losing/Pyr_Entries*Pyr_LoseEqu*PosTypeCapital/Pyr_Losing))
 // plotchar(0, "═════════ Global Pyramiding", "", color=BLK)
-plotchar(Round(Pyr_PLXAvg,4),                                               "PYR: Avg Profitability Per Entry (X)", "", color=PMC(Pyr_PLXAvg))      // ————— Show
+// plotchar(Round(Pyr_PLXAvg,4),                                               "PYR: Avg Profitability Per Entry (X)", "", color=PMC(Pyr_PLXAvg))      // ————— Show
 // plotchar(APPTCur13,                                                         "PYR: Avg Profitability Per Entry (curr)", "", color=PMC(APPTCur13))
 // plotchar(nz(Round(Pyr_PLXAvg/Pyr_TradeLengthsAvg,4)),                       "PYR: Avg Profitability Per Bar (X)", "", color=GF2)
 // plotchar(Round(Pyr_ProfitFactor,4),                                         "PYR: Profit Factor", "", color=GF1)
@@ -1701,7 +1701,7 @@ plotchar(Round((TradePLEqu+PyrTradePLEqu) / nz(Equity[1])*100,2),               
 plotchar(Round(TradeLength,2),                                                              "1ST: Trade Length", "", color=TI1)                                                 // ————— Show
 plotchar(Round(-(EntryXPct + PyrEntryXPctAvg*PyrEntries)/(PyrEntries+1)*100,4),             "ALL: X (% of fill) = Stop = Risk", "", color=MyRedMedium)                          // ————— Show
 plotchar(-(EntryXEqu + PyrPositionInTot*PyrEntryXPctAvg)*PosTypeCapital,                    "ALL: X (curr)", "", color=MyRedMedium)                                             // ————— Show
-plotchar((SlippageEqu+PyrSlipEquTot) * PosTypeCapital,                                      "ALL: Slippage cost (curr)", "", color=MyRedMedium)                                 // ————— Show
+//plotchar((SlippageEqu+PyrSlipEquTot) * PosTypeCapital,                                      "ALL: Slippage cost (curr)", "", color=MyRedMedium)                                 // ————— Show
 plotchar(nz(FeesPaidIn+FeesPaidOut+PyrFeesEquTot) * PosTypeCapital,                         "ALL: Fees paid (curr)", "", color=MyRedMedium)                                     // ————— Show
 plotchar(PositionShownA21,                                                                  "ALL: Position Size (curr)", "", color=TI1)                                         // ————— Show
 plotchar(Round(nz(PositionIn*PosTypeCapital/EntryFill) + PyrPositionInQtyTot,2),            "ALL: Position Size (qty)", "", color=TI1)                                          // ————— Show
@@ -1763,9 +1763,9 @@ MaxDraw = nz(math.abs(PEAReferenceLevel-PEAMaxDrawdown)/PEAX)
 // plotchar(0, "═════════ PEA Information", "", color=BLK)
 // plotchar(InPEA? PEA_Analyses+1:0,                                                           "PEA: Analysis no", "", color=TI1)
 // plotchar(PEABar,                                                                            "PEA: bar", "", color=TI1)
-plotchar(MaxOpp,                                                                            "PEA: Max Opportunity Available (X)", "", color=MyGreenMedium)                      // ————— Show
+//plotchar(MaxOpp,                                                                            "PEA: Max Opportunity Available (X)", "", color=MyGreenMedium)                      // ————— Show
 // plotchar(-MaxRisk,                                                                          "PEA: Max Risk Incurred (X)", "", color=MyRedMedium)
-plotchar(-MaxDraw,                                                                          "PEA: Drawdown to Max Opp. (X)", "", color=MyRedMedium)
+//plotchar(-MaxDraw,                                                                          "PEA: Drawdown to Max Opp. (X)", "", color=MyRedMedium)
 // plotchar(MaxRisk==0?0.0:nz(MaxOpp/MaxRisk),                                                 "PEA: Opportunity/Risk (X)", "", color=TI2)                                         // ————— Show
 // plotchar(MaxOpp-MaxRisk,                                                                    "PEA: Opportunity-Risk (X)", "", color=TI2)
 // plotchar(PEABarToMaxOpp,                                                                    "PEA: Bars to Max Opportunity", "", color=TI1)
@@ -1791,15 +1791,15 @@ plot(ShowInTradeStop and InTrade? InTradeStop:na, "In-trade stop", color=MyOrang
 // ————— Take-profit
 //plot(ShowTakeProfit and InTrade? TakeProfitLevel:na, "Take-Profit Level", color=MyFuchsiaMedium, style=plot.style_circles, linewidth=2)
 // ————— Filter state
-plotshape(ShowFilter? FilterLongOK:na,  "Bull Filter OK", style=shape.triangleup, color=MyGreenMedium, location=location.top, size=size.tiny)
-plotshape(ShowFilter? FilterShortOK:na, "Bear Filter OK", style=shape.triangledown, color=MyRedMedium, location=location.top, size=size.tiny)
+// plotshape(ShowFilter? FilterLongOK:na,  "Bull Filter OK", style=shape.triangleup, color=MyGreenMedium, location=location.top, size=size.tiny)
+// plotshape(ShowFilter? FilterShortOK:na, "Bear Filter OK", style=shape.triangledown, color=MyRedMedium, location=location.top, size=size.tiny)
 // ————— Events
 EventPrintLevel = InLong? (EventType1Trigger or EventType3Trigger? InTradeStop[1]:MinOC)-2*PrintingAtr : InShort? (EventType1Trigger or EventType3Trigger? InTradeStop[1]:MaxOC)+2*PrintingAtr : na
 EventPrintLevelTopBot = InShort? MinOC-2*PrintingAtr : InLong? MinOC+2*PrintingAtr : na
 plotshape(EventType1 and EventType1Trigger? EventPrintLevel:na,         "Event 1: Price nearing stop",  style=shape.circle, color=MyOrangeMedium,   location=location.absolute, size=size.tiny)
 plotshape(EventType2 and EventType2Trigger? EventPrintLevelTopBot:na,   "Event 2: Possible Top/Bottom", style=shape.circle, color=MyRedSemiDark,    location=location.absolute, size=size.tiny)
-plotshape(EventType3 and EventType3Trigger? EventPrintLevel:na,         "Event 3: Stop Moved",          style=shape.circle, color=MyYellowMedium,   location=location.absolute, size=size.tiny)
-plotshape(EventType4 and EventType4Trigger? EventPrintLevel:na,         "Event 4: Big Price Swing",     style=shape.circle, color=MyGreenMedium,    location=location.absolute, size=size.tiny)
+// plotshape(EventType3 and EventType3Trigger? EventPrintLevel:na,         "Event 3: Stop Moved",          style=shape.circle, color=MyYellowMedium,   location=location.absolute, size=size.tiny)
+// plotshape(EventType4 and EventType4Trigger? EventPrintLevel:na,         "Event 4: Big Price Swing",     style=shape.circle, color=MyGreenMedium,    location=location.absolute, size=size.tiny)
 // ————— Entry markers with entry number
 // These plots all print on the bar following the trigger, which corresponds to where TV backtesting will also enter/exit trades.
 MarkerSize = size.small
