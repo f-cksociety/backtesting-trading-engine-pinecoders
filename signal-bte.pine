@@ -1,4 +1,4 @@
-//@version=3
+//@version=5
 //@author=LucF, for PineCoders
 
 // Signal for Backtesting-Trading Engine [PineCoders]
@@ -34,13 +34,13 @@
 //      Entry and Exit alerts trigger at the same bar where the relevant marker will appear on the chart.
 //      Event alerts trigger on the bar following the appearance of their respective marker on the chart.
 
-study("Signal for Backtesting-Trading Engine [PineCoders]")
+indicator('Signal for Backtesting-Trading Engine [PineCoders]')
 
 // Allow selection of signal content.
-IncludeFilter   = input(true, "Include Filter")
-IncludeEntries  = input(true, "Include Entries")
-IncludeStops    = input(true, "Include Stops with Entries")
-IncludeExits    = input(true, "Include Exits")
+IncludeFilter = input(true, 'Include Filter')
+IncludeEntries = input(true, 'Include Entries')
+IncludeStops = input(true, 'Include Stops with Entries')
+IncludeExits = input(true, 'Include Exits')
 
 
 // ——————————————————————————————————————————————————————————————————————————————————————
@@ -51,25 +51,25 @@ IncludeExits    = input(true, "Include Exits")
 fastLength = input(12)
 slowlength = input(26)
 MACDLength = input(9)
-MACD = ema(close, fastLength) - ema(close, slowlength)
-aMACD = ema(MACD, MACDLength)
+MACD = ta.ema(close, fastLength) - ta.ema(close, slowlength)
+aMACD = ta.ema(MACD, MACDLength)
 
 // ————— Filter.
-FilterLong  = MACD>0
-FilterShort = MACD<0
+FilterLong = MACD > 0
+FilterShort = MACD < 0
 
 // ————— Entries.
-EnterLong  = crossover(MACD, 0)
-EnterShort = crossunder(MACD, 0)
+EnterLong = ta.crossover(MACD, 0)
+EnterShort = ta.crossunder(MACD, 0)
 
 // ————— Stops.
-Atr = atr(14)
-StopLong  = min(lowest(5), min(close,open) - Atr * 1.5)
-StopShort = max(highest(5), max(close,open) + Atr * 1.5)
+Atr = ta.atr(14)
+StopLong = math.min(ta.lowest(5), math.min(close, open) - Atr * 1.5)
+StopShort = math.max(ta.highest(5), math.max(close, open) + Atr * 1.5)
 
 // ————— Exits.
-ExitLong  = crossunder(MACD, aMACD) and MACD > 0
-ExitShort = crossover(MACD, aMACD) and MACD < 0
+ExitLong = ta.crossunder(MACD, aMACD) and MACD > 0
+ExitShort = ta.crossover(MACD, aMACD) and MACD < 0
 
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 // ——————————————————————————————————————————————————————————————————————————————————————
@@ -77,12 +77,15 @@ ExitShort = crossover(MACD, aMACD) and MACD < 0
 
 // ————— This function ensures that no stop value equal to one of the protocol's reserved values is sent, so it isn't misinterpreted as a signal.
 // The fudge is in the direction where the trade's risk is decreased by a tick, so added for longs and subtracted for shorts.
-FudgeStop( _stop, _fudgedir) => _stop == 1.0 or _stop == 2.0 or _stop == 3.0 ? _stop + syminfo.mintick * _fudgedir : _stop
+FudgeStop(_stop, _fudgedir) =>
+    _stop == 1.0 or _stop == 2.0 or _stop == 3.0 ? _stop + syminfo.mintick * _fudgedir : _stop
 
 // ————— Build required values corresponding to states.
 Filter = FilterLong ? 1 : FilterShort ? -1 : 0
 Entries = EnterLong ? 2 : EnterShort ? -2 : 0
-Stops = EnterLong ? FudgeStop(StopLong, 1) : EnterShort ? -FudgeStop(StopShort, -1) : 0
+FudgeStop__1 = FudgeStop(StopLong, 1)
+FudgeStop__2 = FudgeStop(StopShort, -1)
+Stops = EnterLong ? FudgeStop__1 : EnterShort ? -FudgeStop__2 : 0
 Exits = ExitLong ? 3 : ExitShort ? -3 : 0
 
 // ————— We must decide which value will be sent in case more than one is different than 0, since only one value can be sent at each bar.
@@ -90,13 +93,14 @@ Exits = ExitLong ? 3 : ExitShort ? -3 : 0
 Signal = IncludeExits and Exits != 0 ? Exits : IncludeStops and Stops != 0 ? Stops : IncludeEntries and Entries != 0 ? Entries : IncludeFilter and Filter != 0 ? Filter : na
 
 // ————— Plot signal which is to be connected to the Engine through the External Indicator field at the very bottom of the Engine's Settings/Inputs.
-plot( Signal, "Signal")
+plot(Signal, 'Signal')
 
 
 // ————— Plots markers.
-plotshape(IncludeEntries and EnterLong,     "Enter Long",   style=shape.triangleup,     location=location.bottom,   color=green,    size=size.small,    text="Enter\nLong")
-plotshape(IncludeEntries and EnterShort,    "Enter Short",  style=shape.triangledown,   location=location.top,      color=red,      size=size.small,    text="Enter\nShort")
-plotshape(IncludeExits and ExitLong,        "Exit Long",    style=shape.triangledown,   location=location.top,      color=green,    size=size.tiny,     text="Exit\nLong")
-plotshape(IncludeExits and ExitShort,       "Exit Short",   style=shape.triangleup,     location=location.bottom,   color=red,      size=size.tiny,     text="Exit\nShort")
+plotshape(IncludeEntries and EnterLong, 'Enter Long', style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.small, text='Enter\nLong')
+plotshape(IncludeEntries and EnterShort, 'Enter Short', style=shape.triangledown, location=location.top, color=color.new(color.red, 0), size=size.small, text='Enter\nShort')
+plotshape(IncludeExits and ExitLong, 'Exit Long', style=shape.triangledown, location=location.top, color=color.new(color.green, 0), size=size.tiny, text='Exit\nLong')
+plotshape(IncludeExits and ExitShort, 'Exit Short', style=shape.triangleup, location=location.bottom, color=color.new(color.red, 0), size=size.tiny, text='Exit\nShort')
 
-bgcolor(color = IncludeFilter and FilterLong ? lime : IncludeFilter and FilterShort ? red : na, title = "Filter Background")
+bgcolor(color=IncludeFilter and FilterLong ? color.new(#00FF00,93) : IncludeFilter and FilterShort ? color.new(#FF0000,90) : na, title='Filter Background')
+
