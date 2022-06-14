@@ -1,0 +1,62 @@
+//@version=4
+// Renko Acceleration
+//
+//   Renko is a very useful charting method for analyzing stock movement.  
+//   It does a great job of filtering out all the excess noise so that all we're
+//   left with is pure price action. But, what about time? Time is a fundamental
+//   part of chart analysis and without it we're only seeing part of the 
+//   picture. After all, shouldn't we take a very different approach to trading
+//   signals from a block that renders in 2 seconds as opposed to a block that
+//   renders in 30 minutes?
+//
+//   This indicator provides the best of both worlds, enabling us to correlate 
+//   the passing of time with price movement and see clearly when squeezes and
+//   breakouts occur. 
+//
+//   As the indicator turns up to green we can see that volatility is on the 
+//   move and the market is accelerating (breakout), and as it turns down to red 
+//   the market is stagnating (squeeze). There is also an alternate 'Precise' 
+//   view which renders the exact time per block for more granular analysis.
+//
+study("Renko Acceleration", overlay=false)
+
+// Allow selection of signal content.
+IncludeFilter = input(true, 'Include Filter')
+
+mode = input("Momentum", "Display Mode", options=["Momentum", "Precise"])
+smoothing = input(10, "Smoothing", input.integer, minval=0)
+
+float duration = (time-time[1]) / (1000*60) // block time in seconds
+float accel = na
+color accelColor = na
+         
+if mode == "Momentum"
+    bline = sma(duration, 100) * 1.25
+    accel := max(bline-duration, -20) // trim negative outliers
+    accel := smoothing ? sma(accel, smoothing) : accel
+    accelColor := accel > 15 ? color.lime : 
+         accel > 5 ? color.green : 
+         accel > 0 ? color.olive : 
+         accel > -5 ? color.yellow : 
+         accel > -10 ? color.orange : color.red
+
+if mode == "Precise"
+    accel := duration
+    accelColor := duration > 30 ? color.red : 
+         duration > 15 ? color.orange : 
+         duration > 5 ? color.yellow : color.silver
+     
+plot(accel, "Time", style=plot.style_histogram, color=accelColor)
+
+// ————— Filter.
+FilterLong = accel > 0
+FilterShort = accel > 0
+
+// ————— Build required values corresponding to states.
+Filter = FilterLong ? 0.001 : FilterShort ? 0.001 : 0
+
+// ————— We must decide which value will be sent in case more than one is different than 0, since only one value can be sent at each bar.
+// Priority is given to exits, with filter states coming last.
+Signal = IncludeFilter and Filter != -0.001 ? Filter : na
+// ————— Plot signal which is to be connected to the Engine through the External Indicator field at the very bottom of the Engine's Settings/Inputs.
+plot(Signal, 'Signal')
