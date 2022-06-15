@@ -689,6 +689,27 @@ MASqzBear = na(SqLup) and upma<dnma
 // plot(SqLup,color=yellow,linewidth=4,style=linebr,transp=0)
 // plot(SqLdn,color=red,linewidth=4,style=linebr,transp=0)
 
+//Renko Acceleration by @sourcey added Enes Akalın
+
+mode = input.string("Momentum", "Display Mode", options=["Momentum", "Precise"])
+smoothing = input.int(10, "Smoothing", minval=0)
+
+float duration = (time-time[1]) / (1000*60) // block time in seconds
+float accel = na
+color accelColor = na
+         
+if mode == "Momentum"
+    bline = ta.sma(duration, 100) * 1.25
+    accel := math.max(bline-duration, -20) // trim negative outliers
+    accel := smoothing ? ta.sma(accel, smoothing) : accel
+    accelColor := accel > 15 ? color.lime : 
+         accel > 5 ? color.green : 
+         accel > 0 ? color.olive : 
+         accel > -5 ? color.yellow : 
+         accel > -10 ? color.orange : color.red
+
+//plot(accel, "Time", style=plot.style_histogram, color=accelColor)
+
 // ———————————————————— Function used to increment counters by 1 using boolean criterion.
 OneZero( _test) => 
     _return = _test? 1:0
@@ -807,21 +828,26 @@ FilterIchiBear = (FKumoA<FKumoB and FKumoANow<FKumoBNow and close<FKumoNowHigh) 
 Filter8Long = FilterType8? FilterIchiBull : true
 Filter8Short = FilterType8? FilterIchiBear : true
 // ————— Filter 9: RSI OS/OB
-Rsi = ta.rsi(close, FilterType9Len), RsiOS = Rsi<FilterType9OS, RsiOB = Rsi>FilterType9OB
-Filter9Long = FilterType9? not RsiOB : true
-Filter9Short = FilterType9? not RsiOS : true
+
+Rsi = ta.rsi(close, FilterType9Len), RsiOS = Rsi<=FilterType9OS, RsiOB = Rsi>=FilterType9OB
+Filter9Long = FilterType9? RsiOB : true
+Filter9Short = FilterType9? RsiOS : true
 // ————— Filter 10: Chandelier
 Filter10Long = FilterType10? C2Bull : true
 Filter10Short = FilterType10? C2Bear : true
 // ————— Filter 11: MA Squize
 Filter11Long = FilterType11? MASqzBull : true
 Filter11Short = FilterType11? MASqzBear : true
-
+// ————— Filter 12: Renko Accel
+Filter12Accel = if accel > 5.5 
+      true
+  else
+      false
 // ———————————————————— Assemble filters
 FilterLongOK = false
 FilterShortOK = false
-FilterLongOK := Filter1Long and Filter2Long and Filter3Long and Filter4Long and Filter5Long and Filter6Long and Filter7Long and Filter8Long and Filter9Long and Filter10Long and Filter11Long
-FilterShortOK := Filter1Short and Filter2Short and Filter3Short and Filter4Short and Filter5Short and Filter6Short and Filter7Short and Filter8Short and Filter9Short and Filter10Short and Filter11Short
+FilterLongOK := Filter1Long and Filter2Long and Filter3Long and Filter4Long and Filter5Long and Filter6Long and Filter7Long and Filter8Long and Filter9Long and Filter10Long and Filter11Long and Filter12Accel
+FilterShortOK := Filter1Short and Filter2Short and Filter3Short and Filter4Short and Filter5Short and Filter6Short and Filter7Short and Filter8Short and Filter9Short and Filter10Short and Filter11Short and Filter12Accel
 
 
 
