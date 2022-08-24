@@ -121,7 +121,7 @@
 //      4.  Save and voilà!
 
 // Put the name of your system here. This string is used in study(), strategy() and alertconditon() statements.
-SystemName = "Backtesting & Trading Engine [PineCoders]"
+SystemName = "Backtesting & Trading Engine AO [PineCoders]"
 // This string is to personalize the text that appears with your orders on the chart through strategy() calls and entry/exit markers, and in the alert default message.
 // Although leaving it empty will not cause problems in study mode,
 // IT MUST BE NON NULL WHEN THIS CODE IS COMPILED AS A STRATEGY, otherwise you will get a server error. A space is legal.
@@ -689,14 +689,14 @@ MASqzBear = na(SqLup) and upma<dnma
 // plot(SqLup,color=yellow,linewidth=4,style=linebr,transp=0)
 // plot(SqLdn,color=red,linewidth=4,style=linebr,transp=0)
 
-//AO add by @HeyMrRobot
+//Awesome added by @HeyMrRobot
+
 ao = ta.sma(close,5) - ta.sma(close,34)
 diff = ao - ao[1]
-plot(ao, color = diff <= 0 ? #F44336 : #009688, style=plot.style_columns)
-changeToGreen = ta.crossover(diff, 0)
-changeToRed = ta.crossunder(diff, 0)
+//plot(ao, color = diff <= 0 ? #F44336 : #009688, style=plot.style_columns)
+//changeToGreen = ta.crossover(diff, 0)
+//changeToRed = ta.crossunder(diff, 0)
 
-//plot(accel, "Time", style=plot.style_histogram, color=accelColor)
 
 // ———————————————————— Function used to increment counters by 1 using boolean criterion.
 OneZero( _test) => 
@@ -827,10 +827,14 @@ Filter10Short = FilterType10? C2Bear : true
 Filter11Long = FilterType11? MASqzBull : true
 Filter11Short = FilterType11? MASqzBear : true
 // ————— Filter 12: Awesome
-Filter12Long = if ao > 0 true
-Filter12Short = if ao < 0 true
-  else
-      false
+Filter12Long = if ao > 0
+    true
+else
+    false
+Filter12Short = if ao < 0
+    true
+else
+    false
 // ———————————————————— Assemble filters
 FilterLongOK = false
 FilterShortOK = false
