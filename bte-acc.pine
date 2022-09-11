@@ -121,7 +121,7 @@
 //      4.  Save and voilà!
 
 // Put the name of your system here. This string is used in study(), strategy() and alertconditon() statements.
-SystemName = "Backtesting & Trading Engine [PineCoders]"
+SystemName = "Backtesting & Trading Engine ACC [PineCoders]"
 // This string is to personalize the text that appears with your orders on the chart through strategy() calls and entry/exit markers, and in the alert default message.
 // Although leaving it empty will not cause problems in study mode,
 // IT MUST BE NON NULL WHEN THIS CODE IS COMPILED AS A STRATEGY, otherwise you will get a server error. A space is legal.
@@ -674,40 +674,37 @@ C2Bull = C2dir==1, C2Bear = not C2Bull
 donchian(_len) => math.avg(ta.lowest(_len), ta.highest(_len))
 
 // ———————————————————— MA Squize used in Filter 11 (Thx to @glaz).
-//MAsThreSHoldPips = 15, ATRmode = true, ATRperiod = 50, ATRmultipl = 0.4
-//delta = 0.0, var float SqLup = na, var float SqLdn = na
-//upma = ta.ema(close,FilterType11Len1), dnma = ta.ema(close,FilterType11Len2), madif = math.abs(upma-dnma)
-//delta := ATRmode? ta.atr(ATRperiod) * ATRmultipl/syminfo.mintick : MAsThreSHoldPips
-//if (madif/syminfo.mintick<delta)
-//    SqLup := dnma + delta*syminfo.mintick 
-//    SqLdn := dnma - delta*syminfo.mintick 
-//MASqzBull = na(SqLup) and upma>dnma
-//MASqzBear = na(SqLup) and upma<dnma
+MAsThreSHoldPips = 15, ATRmode = true, ATRperiod = 50, ATRmultipl = 0.4
+delta = 0.0, var float SqLup = na, var float SqLdn = na
+upma = ta.ema(close,FilterType11Len1), dnma = ta.ema(close,FilterType11Len2), madif = math.abs(upma-dnma)
+delta := ATRmode? ta.atr(ATRperiod) * ATRmultipl/syminfo.mintick : MAsThreSHoldPips
+if (madif/syminfo.mintick<delta)
+    SqLup := dnma + delta*syminfo.mintick 
+    SqLdn := dnma - delta*syminfo.mintick 
+MASqzBull = na(SqLup) and upma>dnma
+MASqzBear = na(SqLup) and upma<dnma
 // Plots are there in case you want to see what MA Squize looks like.
 // plot(upma,color=color.lime,linewidth=2,transp=0)
 // plot(dnma,color=red,linewidth=2,transp=0)
 // plot(SqLup,color=yellow,linewidth=4,style=linebr,transp=0)
 // plot(SqLdn,color=red,linewidth=4,style=linebr,transp=0)
 
-mode = input("Momentum", "Display Mode", options=["Momentum", "Precise"])
-smoothing = input.int(10, "Smoothing", input.integer, minval=0)
-
+//Renko Acceleration by @sourcey added Enes Akalın
+mode = input.string("Momentum", "Display Mode", options=["Momentum", "Precise"])
+smoothing = input.int(10, "Smoothing", minval=0)
 float duration = (time-time[1]) / (1000*60) // block time in seconds
 float accel = na
 color accelColor = na
          
 if mode == "Momentum"
-    bline = sma(duration, 100) * 1.25
-    accel := max(bline-duration, -20) // trim negative outliers
-    accel := smoothing ? sma(accel, smoothing) : accel
+    bline = ta.sma(duration, 100) * 1.25
+    accel := math.max(bline-duration, -20) // trim negative outliers
+    accel := smoothing ? ta.sma(accel, smoothing) : accel
     accelColor := accel > 15 ? color.lime : 
          accel > 5 ? color.green : 
          accel > 0 ? color.olive : 
          accel > -5 ? color.yellow : 
          accel > -10 ? color.orange : color.red
-
-
-plot(accel, "Time", style=plot.style_histogram, color=accelColor)
 //
 // ———————————————————— Function used to increment counters by 1 using boolean criterion.
 OneZero( _test) => 
