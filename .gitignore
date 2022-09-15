@@ -3,3 +3,5 @@ gpg-key.txt
 bte-v5-kiosefftrading.pine
 newrelic_agent.log
 *.log
+freqtrade/renko/threads.md
+simulation/bnbperp
