@@ -1,4 +1,39 @@
 //@version=5
+//@author=LucF, for PineCoders
+
+// Signal for Backtesting-Trading Engine [PineCoders]
+//  v1.3, 2019.06.21 02:58
+
+// PineCoders, Tools and ideas for all Pine coders.
+// This script is referenced from the PineCoders FAQ & Code here: http://www.pinecoders.com/faq_and_code/#how-can-i-use-one-scripts-output-as-an-input-into-another
+// Documentation: https://www.tradingview.com/script/y4CvTwRo-Signal-for-Backtesting-Trading-Engine-PineCoders/
+
+// This script is an example of how to configure a signal for the PineCoders Backtesting-Trading Engine
+// which you will find here: https://www.tradingview.com/script/dYqL95JB-Backtesting-Trading-Engine-PineCoders/
+// We used the built-in MACD indicator as a template. The script's signal adheres to the following protocol:
+
+// EXTERNAL SIGNAL PROTOCOL
+//      Only one external indicator can be connected to a script; in order to leverage its use to the fullest,
+//      the engine provides options to use it as either and entry signal, an entry/exit signal or a filter.
+//      When used as an entry signal, you can also use the signal to provide the entry stop. Here’s how this works.
+//        - For filter state: supply +1.0 for bull (long entries allowed), -1.0 for bear (short entries allowed).
+//        - For entry signals: supply +2.0 for long, -2.0 for short.
+//        - For exit signals: supply +3.0 for exit from long, -3.0 for exit from short.
+//        - To send an entry stop level with entry signal: Send positive stop level for long entry
+//          (e.g. 103.33 to enter a long with a stop at 103.33), negative stop level for short entry
+//          (e.g. -103.33 to enter a short with a stop at 103.33). If you use this feature,
+//          your indicator will have to check for exact stop levels of 1.0, 2.0 or 3.0 and their negative counterparts,
+//          and fudge them with a tick in order to avoid confusion with other signals in the protocol.
+//      Note that each use must be confirmed in the corresponding section of the script's Settings/Inputs.
+
+// CONFIGURATION OF ALERTS
+//      Entry and Event alerts will generally be configured to trigger Once Per Bar Close.
+//      Exit alerts can be configured to trigger Once Per Bar Close or Once Per Bar, depending on how fast
+//      you want them. Once Per Bar means the alert will trigger the moment the condition is first encountered
+//      during the realtime bar, instead of at the bar's close.
+//      Entry and Exit alerts trigger at the same bar where the relevant marker will appear on the chart.
+//      Event alerts trigger on the bar following the appearance of their respective marker on the chart.
+
 // ══════════════════════════════════════════════════════════════════════════════════════════════════ //
 //# * ══════════════════════════════════════════════════════════════════════════════════════════════
 //# *
@@ -12,8 +47,14 @@
 //# *
 //# * ══════════════════════════════════════════════════════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════════════════════════════════════════════ //
+indicator('F&G CYCLE ʙʏ DGT Signal for Backtesting-Trading Engine [PineCoders]')
 
-indicator('Trading Psychology - Fear & Greed Index by DGT', 'F&G CYCLE ʙʏ DGT ☼☾', false, max_bars_back=252)
+// Allow selection of signal content.
+IncludeFilter = input(true, 'Include Filter')
+IncludeEntries = input(true, 'Include Entries')
+IncludeStops = input(true, 'Include Stops with Entries')
+IncludeExits = input(true, 'Include Exits')
+
 
 // -Inputs ====================================================================================== //
 
@@ -61,7 +102,7 @@ f_getText(_cycle) =>
         'Extreame Greed'
     else if _cycle > 33
         'Greed'
-    else if _cycle < -25
+    else if _cycle < -15
         'Fear'
     else if _cycle < -41
         'Extreame Fear'
@@ -192,3 +233,54 @@ if lagendDesc
         table.cell(legend, 0, 2, "Neutral █", text_size = size.small, text_color = #92928f, text_halign = text.align_right)
         table.cell(legend, 0, 3, "Fear █", text_size = size.small, text_color = #ff7434, text_halign = text.align_right)
         table.cell(legend, 0, 4, "Extreame Fear █", text_size = size.small, text_color = #910000, text_halign = text.align_right)
+
+
+// ————— Filter.
+FilterLong = Fear
+FilterShort = Greed
+
+// ————— Entries.
+EnterLong = Fear
+EnterShort = Greed
+
+// ————— Stops.
+Atr = ta.atr(14)
+StopLong = math.min(ta.lowest(5), math.min(close, open) - Atr * 1.5)
+StopShort = math.max(ta.highest(5), math.max(close, open) + Atr * 1.5)
+
+// ————— Exits.
+ExitLong = Neutral
+ExitShort = Neutral
+
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
+// ——————————————————————————————————————————————————————————————————————————————————————
+
+
+// ————— This function ensures that no stop value equal to one of the protocol's reserved values is sent, so it isn't misinterpreted as a signal.
+// The fudge is in the direction where the trade's risk is decreased by a tick, so added for longs and subtracted for shorts.
+FudgeStop(_stop, _fudgedir) =>
+    _stop == 1.0 or _stop == 2.0 or _stop == 3.0 ? _stop + syminfo.mintick * _fudgedir : _stop
+
+// ————— Build required values corresponding to states.
+Filter = FilterLong ? 1 : FilterShort ? -1 : 0
+Entries = EnterLong ? 2 : EnterShort ? -2 : 0
+FudgeStop__1 = FudgeStop(StopLong, 1)
+FudgeStop__2 = FudgeStop(StopShort, -1)
+Stops = EnterLong ? FudgeStop__1 : EnterShort ? -FudgeStop__2 : 0
+Exits = ExitLong ? 3 : ExitShort ? -3 : 0
+
+// ————— We must decide which value will be sent in case more than one is different than 0, since only one value can be sent at each bar.
+// Priority is given to exits, with filter states coming last.
+Signal = IncludeExits and Exits != 0 ? Exits : IncludeStops and Stops != 0 ? Stops : IncludeEntries and Entries != 0 ? Entries : IncludeFilter and Filter != 0 ? Filter : na
+
+// ————— Plot signal which is to be connected to the Engine through the External Indicator field at the very bottom of the Engine's Settings/Inputs.
+plot(Signal, 'Signal')
+
+
+// ————— Plots markers.
+plotshape(IncludeEntries and EnterLong, 'Enter Long', style=shape.triangleup, location=location.bottom, color=color.new(color.green, 0), size=size.small, text='Enter\nLong')
+plotshape(IncludeEntries and EnterShort, 'Enter Short', style=shape.triangledown, location=location.top, color=color.new(color.red, 0), size=size.small, text='Enter\nShort')
+plotshape(IncludeExits and ExitLong, 'Exit Long', style=shape.triangledown, location=location.top, color=color.new(color.green, 0), size=size.tiny, text='Exit\nLong')
+plotshape(IncludeExits and ExitShort, 'Exit Short', style=shape.triangleup, location=location.bottom, color=color.new(color.red, 0), size=size.tiny, text='Exit\nShort')
+
+bgcolor(color=IncludeFilter and FilterLong ? color.new(#00FF00,93) : IncludeFilter and FilterShort ? color.new(#FF0000,90) : na, title='Filter Background')
