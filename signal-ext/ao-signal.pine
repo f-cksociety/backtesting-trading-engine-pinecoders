@@ -34,7 +34,7 @@
 //      Entry and Exit alerts trigger at the same bar where the relevant marker will appear on the chart.
 //      Event alerts trigger on the bar following the appearance of their respective marker on the chart.
 
-indicator('Signal for Backtesting-Trading Engine [PineCoders]')
+indicator('Signal for Backtesting-Trading Engine [PineCoders]', timeframe="1")
 
 // Allow selection of signal content.
 IncludeFilter = input(true, 'Include Filter')
