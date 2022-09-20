@@ -34,7 +34,7 @@
 //      Entry and Exit alerts trigger at the same bar where the relevant marker will appear on the chart.
 //      Event alerts trigger on the bar following the appearance of their respective marker on the chart.
 
-indicator('Awesome Signal for Backtesting-Trading Engine [PineCoders]')
+indicator('Signal for Backtesting-Trading Engine [PineCoders]')
 
 // Allow selection of signal content.
 IncludeFilter = input(true, 'Include Filter')
@@ -48,14 +48,14 @@ IncludeExits = input(true, 'Include Exits')
 // This part is the section where you would put your own indicator and define conditions.
 
 // ————— TV built-in MACD code.
-ao = ta.sma(close,7) - ta.sma(close,20)
+ao = ta.sma(close,5) - ta.sma(close,34)
 diff = ao - ao[1]
 plot(ao, color = diff <= 0 ? #F44336 : #009688, style=plot.style_columns)
 
 
 // ————— Filter.
-FilterLong = diff > 0
-FilterShort = diff < 0
+FilterLong = ao > 0
+FilterShort = ao < 0
 
 // ————— Entries.
 EnterLong = ta.crossover(diff, 0)
